@@ -40,7 +40,10 @@ parallel rate-limit calls, Redis key TTLs. Later waves follow the same rule for 
 
 ## Known limitations
 
-- Browser tests against `next dev` need a warm server: on a cold dev server, first-time page compiles
-  trigger reloads and tests time out. `npm run test:e2e` and CI use the production build, where this does
-  not happen.
+- One run of the browser tests against `next dev` timed out in a reload loop (2026-11-07). It did not
+  reproduce in 4 later runs on a truly cold dev server (1 and 4 workers). Slow first-time compiles and
+  Playwright's artifact writes were both tested and ruled out; the root cause is unknown. Each page
+  compiled for the first time does reload once when hot reload connects (measured). `npm run test:e2e`
+  and CI use the production build, which passed every run. If a dev-mode run loops again, keep the
+  server log and the Playwright trace for diagnosis.
 - CI has never been observed running (the GitHub token cannot read Actions results yet).

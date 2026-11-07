@@ -843,16 +843,16 @@ Fresh-clone details:
 
 ### Bugs and surprises found during Wave 2A, all fixed and verified
 
-| Finding                                                                                | Evidence                                                                                                                     | Fix                                                                                                                                        |
-| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Fresh clone could not seed (no Prisma client)                                          | `ERR_MODULE_NOT_FOUND` in the clone                                                                                          | `postinstall` generate; verified by `npm ci` in a scratch copy                                                                             |
-| Wrong Node version only produced warnings                                              | `EBADENGINE` warnings under Node 20                                                                                          | `.npmrc` `engine-strict=true`; Node 20 install now refused                                                                                 |
-| Build warned "Node.js API … not supported in the Edge Runtime" (3 warnings)            | Next compiles instrumentation for Edge too                                                                                   | Node-only startup code behind `NEXT_RUNTIME === 'nodejs'` dynamic import; build has 0 warnings                                             |
-| Invalid config left the server running and answering 500                               | `next start` stayed up; requests returned 500                                                                                | `process.exit(1)` on invalid config; verified exit code 1 and nothing listening                                                            |
-| node-redis command timeouts did not cancel a reply from a frozen Redis                 | `commandOptions.timeout`, per-call timeout and `AbortSignal` all still pending after 4 s; health took 2.01 s (probe timeout) | app-level deadline in `runRedisCommand`; frozen Redis now costs ~0.5 s                                                                     |
-| `socket.socketTimeout` also dropped idle connections                                   | 5 reconnects in 3 idle seconds                                                                                               | not used; idle check with the final client: no reconnects                                                                                  |
-| Every request waited 500 ms during a Redis outage; one stack-trace warning per request | 6 rate-limit calls took 2,281 ms; 6 warnings                                                                                 | 5 s circuit-breaker cooldown and throttled fallback log: 745 ms for 6 calls, 2 log lines                                                   |
-| Browser tests against a **cold** `next dev` time out in a reload loop                  | 9/9 failed; 0 CSP violations recorded; HMR connected                                                                         | not a code bug: a warm dev server passed 9/9 twice with CSP checks. Documented as a limitation; CI and `test:e2e` use the production build |
+| Finding                                                                                | Evidence                                                                                                                     | Fix                                                                                                                                                                                                     |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fresh clone could not seed (no Prisma client)                                          | `ERR_MODULE_NOT_FOUND` in the clone                                                                                          | `postinstall` generate; verified by `npm ci` in a scratch copy                                                                                                                                          |
+| Wrong Node version only produced warnings                                              | `EBADENGINE` warnings under Node 20                                                                                          | `.npmrc` `engine-strict=true`; Node 20 install now refused                                                                                                                                              |
+| Build warned "Node.js API … not supported in the Edge Runtime" (3 warnings)            | Next compiles instrumentation for Edge too                                                                                   | Node-only startup code behind `NEXT_RUNTIME === 'nodejs'` dynamic import; build has 0 warnings                                                                                                          |
+| Invalid config left the server running and answering 500                               | `next start` stayed up; requests returned 500                                                                                | `process.exit(1)` on invalid config; verified exit code 1 and nothing listening                                                                                                                         |
+| node-redis command timeouts did not cancel a reply from a frozen Redis                 | `commandOptions.timeout`, per-call timeout and `AbortSignal` all still pending after 4 s; health took 2.01 s (probe timeout) | app-level deadline in `runRedisCommand`; frozen Redis now costs ~0.5 s                                                                                                                                  |
+| `socket.socketTimeout` also dropped idle connections                                   | 5 reconnects in 3 idle seconds                                                                                               | not used; idle check with the final client: no reconnects                                                                                                                                               |
+| Every request waited 500 ms during a Redis outage; one stack-trace warning per request | 6 rate-limit calls took 2,281 ms; 6 warnings                                                                                 | 5 s circuit-breaker cooldown and throttled fallback log: 745 ms for 6 calls, 2 log lines                                                                                                                |
+| Browser tests against `next dev` timed out in a reload loop (one run)                  | 9/9 failed; 0 CSP violations recorded; HMR connected                                                                         | **Corrected in the verification addendum below:** the "cold compile" explanation was disproven; the failure did not reproduce in 4 later runs on a truly cold dev server, and its root cause is unknown |
 
 ### Mistakes made and corrected during Wave 2A (process)
 
@@ -902,7 +902,7 @@ Earlier item-level checks:
 3. **Rate limiter not wired to any endpoint yet** (Wave 2B: login and register).
 4. **Rate-limit window boundary:** a fixed window allows up to 2× the limit across a window boundary. Old Postgres counter rows are not cleaned up yet.
 5. **CSP strength:** `script-src` keeps `'unsafe-inline'` (no nonces, because of Partial Prerendering).
-6. **Cold dev server:** browser tests against a cold `next dev` time out; use `npm run test:e2e` (production build) or warm the dev server first.
+6. **Dev-server browser run (unexplained, not reproducible):** one run of the browser tests against `next dev` timed out in a reload loop; 4 later runs on a truly cold dev server passed. The root cause is unknown (see the verification addendum). The browser tests that gate CI and `npm run test:e2e` use the production build, which passed every run.
 7. **Redis cooldown:** for up to 5 s after a Redis failure, Redis is skipped even if it has recovered.
 8. **Hosted config placeholders:** staging and production config files use `example.com` placeholder hosts until Wave 15.
 9. **Webhook isolation not built yet:** the isolated local webhook routing (`webhookHosts`) is designed (TD-008) but built in Wave 8B.
@@ -936,3 +936,72 @@ Earlier item-level checks:
 - **CI, checked by the agent:** not possible. `GET /actions/runs`, `/commits/d7e3a0e…/check-runs` and `/commits/d7e3a0e…/status` all return 403 "Resource not accessible by personal access token" (the token still lacks Actions: read).
 - **What the green runs can and cannot cover:** only `fa6ebd6` and `d7e3a0e` have ever been pushed, so they must be runs for those commits, using the **Wave 1 workflow** (no Redis service, no integration tests, no `start:test`). Each run's short SHA is visible in the Actions UI to confirm.
 - **Wave 2A has not been tested by CI.** It is committed locally only; its new workflow first runs on the next approved push.
+
+## Wave 2A verification addendum (2026-11-07, owner conditions 1–6)
+
+The Wave 2A commit `6863ad24d95b95b47b1083b79ad13da589be39b2` already existed when these conditions arrived. It was created under the owner's previous instruction to commit locally. The conditions were therefore checked against that commit, and the corrections below are committed separately, so `6863ad2` is not rewritten. Nothing was pushed.
+
+### 1. Exact file counts (correction)
+
+- `git diff --name-status d7e3a0e 6863ad2`: **72 files = 27 modified + 45 added + 0 deleted**, no renames; 3,412 insertions, 175 deletions.
+- The earlier report said "51 paths". That was the number of lines in `git status --short`, which shows each new directory as one line. 8 new directories holding 29 files appeared as 8 lines: 27 + (45 − 29 + 8) = 51 lines, versus 72 files.
+
+### 2. No Wave 1 functionality or data lost
+
+- `prisma/` (schema, migrations, seed) is unchanged since `fa6ebd6`.
+- No files deleted.
+- Wave 1 tests:
+  - `host-routing.test.ts`, `money.test.ts` and `tests/http/not-found.http.test.ts` are unchanged.
+  - The two removed browser assertions (home pages 200) were replaced by a stronger loop: 200 + no page errors + no CSP violations.
+  - **Lost coverage found and restored:** when hosts and log level moved from env vars to config, the Wave 1 tests "empty host list rejected" and "unknown log level rejected" had no equivalent. Both are now in `src/lib/config/load-config.test.ts`.
+- The Wave 1 seed still works with the Wave 2A code:
+  - it ran against the guarded test database;
+  - row counts matched the dev database in all 46 tables (1,625 rows);
+  - content was identical in all 45 data tables once timestamps and UUIDs are excluded.
+- Wave 1 behaviour on the development-config server:
+  - health 200;
+  - store and admin home pages 200;
+  - wrong-host page and APIs 404; unknown host 404;
+  - both custom 404 pages.
+- Dev database fingerprint: **`84956ffb57af5da58ba41b5ea154611d`**, identical at the Wave 1 baseline, the Wave 2A start and now (46 tables, 1,625 rows).
+
+### 3. Browser test results and the dev-server timeouts (correction)
+
+- **Production build, exact result** (`npm run test:e2e`, Playwright starts `start:test` itself): **18 passed, 0 failed, 0 flaky, 0 skipped**. That is 9 tests × 2 projects (desktop and 360 px), every test asserting no page errors; the home-page test also asserts no CSP violations.
+- **Dev server: the earlier explanation was wrong.** The journal and `docs/TESTING_STRATEGY.md` said "first-time page compiles on a cold dev server trigger reloads and tests time out". Re-tested with the dev cache deleted (truly cold):
+
+  | Run                       | Result            |
+  | ------------------------- | ----------------- |
+  | cold, 1 worker            | 9 passed (11.6 s) |
+  | cold, 4 workers           | 9 passed (6.3 s)  |
+  | cold, 4 workers, repeat 2 | 9 passed (6.6 s)  |
+  | cold, 4 workers, repeat 3 | 9 passed (6.1 s)  |
+
+- The original failing run's server log shows pages served in about 200 ms (not compile-bound) and requested repeatedly, which is a reload loop.
+- A second hypothesis (Playwright writing artifacts into `test-results/` inside the project triggers dev reloads) was tested directly: writes into `test-results/` and `playwright-report/` triggered **0** reloads.
+- Measured fact: each page compiled for the first time reloads **once** about 20 ms after hot reload connects, then stays stable.
+- **Conclusion:** one dev-mode run failed; the failure is not reproducible and its root cause is unknown. Both earlier statements were corrected in place. CI and `npm run test:e2e` use the production build.
+
+### 4. Limitations still recorded
+
+- Fixed-window rate limiting: up to 2× the limit across a window boundary; old Postgres counter rows not cleaned up (TD-004, limitation 4).
+- Redis cool-off: up to 5 s skipped after a failure (TD-003, limitation 7).
+- CSP keeps `'unsafe-inline'` for scripts (TD-006, limitation 5).
+- Origin check not yet exercised over HTTP (limitation 2).
+- CI not observed (limitation 1).
+
+### 5. Final regression (2026-11-07 13:39 UTC, working tree = `6863ad2` + the corrections above)
+
+| Check                                       | Result                                                                                                                                 |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run format:check`                      | exit 1 on the first run: a journal table row edited during this verification was not re-formatted. Fixed with Prettier, rerun → exit 0 |
+| `npm run lint` / `npm run typecheck`        | exit 0 / exit 0                                                                                                                        |
+| `npm test`                                  | **101 / 101** (99 + 2 restored Wave 1 checks)                                                                                          |
+| `npm run test:integration`                  | **18 / 18**                                                                                                                            |
+| `npx next build` (`.next` deleted first)    | exit 0, 0 warnings                                                                                                                     |
+| `npm run test:e2e` (production test server) | **18 / 18**                                                                                                                            |
+| `npm run test:http`                         | **19 / 19**                                                                                                                            |
+| Development-config server                   | health 200 `ok` (Postgres, Elasticsearch, Redis up); routing and 404 matrix as in Wave 1                                               |
+| Dev database                                | identical to the Wave 2A start and the Wave 1 baseline                                                                                 |
+| Redis                                       | 0 leftover keys                                                                                                                        |
+| Containers                                  | postgres 18.6, elasticsearch 9.5.5, redis 8.10.3: healthy, localhost only                                                              |

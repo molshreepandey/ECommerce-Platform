@@ -91,6 +91,19 @@ describe('parseConfig validation', () => {
     expect(configIssues(config).join('\n')).toMatch(/must not share a host/);
   });
 
+  it('rejects an empty host list for a surface', () => {
+    const config = cloneDevelopmentConfig();
+    config.surfaces.store.hosts = [];
+    expect(configIssues(config).join('\n')).toMatch(/surfaces\.store\.hosts/);
+  });
+
+  it('rejects an unknown log level', () => {
+    const config = cloneDevelopmentConfig();
+    expect(configIssues({ ...config, logging: { level: 'verbose' } }).join('\n')).toMatch(
+      /logging\.level/,
+    );
+  });
+
   it('rejects a Redis key prefix without a trailing colon', () => {
     const config = cloneDevelopmentConfig();
     config.redis.keyPrefix = 'ecom:dev';
