@@ -1,0 +1,58 @@
+{
+  "surfaces": {
+    "store": {
+      "hosts": ["store.production.example.com"],
+      "publicOrigin": "https://store.production.example.com"
+    },
+    "admin": {
+      "hosts": ["admin.production.example.com"],
+      "publicOrigin": "https://admin.production.example.com"
+    }
+  },
+  "logging": {
+    "level": "info"
+  },
+  "database": {
+    "poolMaxConnections": 10,
+    "connectionTimeoutMilliseconds": 5000,
+    "idleTimeoutMilliseconds": 30000
+  },
+  "elasticsearch": {
+    "indexPrefix": "production",
+    "requestTimeoutMilliseconds": 2000,
+    "maxRetries": 0
+  },
+  "redis": {
+    "keyPrefix": "ecom:production:",
+    "connectTimeoutMilliseconds": 1000,
+    "replyTimeoutMilliseconds": 500,
+    "maxReconnectDelayMilliseconds": 2000,
+    "failureCooldownMilliseconds": 5000
+  },
+  "health": {
+    "probeTimeoutMilliseconds": 2000
+  },
+  "rateLimits": {
+    "customer-login": {
+      "maxRequests": 5,
+      "windowSeconds": 60
+    },
+    "customer-register": {
+      "maxRequests": 10,
+      "windowSeconds": 3600
+    },
+    "staff-login": {
+      "maxRequests": 5,
+      "windowSeconds": 60
+    }
+  },
+  "security": {
+    "strictTransportSecurityMaxAgeSeconds": 31536000,
+    "contentSecurityPolicy": {
+      "imageSources": ["https://picsum.photos", "https://fastly.picsum.photos", "data:", "blob:"],
+      "connectSources": [],
+      "scriptSources": [],
+      "frameSources": []
+    }
+  }
+}

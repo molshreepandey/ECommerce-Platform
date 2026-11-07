@@ -1,20 +1,11 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
-const storeOrigin = 'http://store.localhost:3000';
-const adminOrigin = 'http://admin.localhost:3000';
-
-async function openSettledPage(page: Page, url: string) {
-  const uncaughtPageErrors: string[] = [];
-  page.on('pageerror', (error) => uncaughtPageErrors.push(error.message));
-  const response = await page.goto(url);
-  await page.waitForLoadState('networkidle');
-  return { status: response?.status(), uncaughtPageErrors };
-}
+import { adminOrigin, openSettledPage, storeOrigin } from './support/page-checks';
 
 test.describe('store not-found page', () => {
   for (const pathname of ['/no-such-page', '/deep/nested/missing/path', '/admin']) {
     test(`renders the store 404 for ${pathname}`, async ({ page }) => {
-      const { status, uncaughtPageErrors } = await openSettledPage(
+      const { status, uncaughtPageErrors, contentSecurityPolicyViolations } = await openSettledPage(
         page,
         `${storeOrigin}${pathname}`,
       );
@@ -27,6 +18,7 @@ test.describe('store not-found page', () => {
       await expect(page.getByText('This admin page does not exist')).toHaveCount(0);
       await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
       expect(uncaughtPageErrors).toEqual([]);
+      expect(contentSecurityPolicyViolations).toEqual([]);
     });
   }
 
@@ -45,7 +37,7 @@ test.describe('store not-found page', () => {
 test.describe('admin not-found page', () => {
   for (const pathname of ['/no-such-page', '/orders/missing-order', '/store']) {
     test(`renders the admin 404 for ${pathname}`, async ({ page }) => {
-      const { status, uncaughtPageErrors } = await openSettledPage(
+      const { status, uncaughtPageErrors, contentSecurityPolicyViolations } = await openSettledPage(
         page,
         `${adminOrigin}${pathname}`,
       );
@@ -58,6 +50,7 @@ test.describe('admin not-found page', () => {
       await expect(page.getByText('Back to the store')).toHaveCount(0);
       await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
       expect(uncaughtPageErrors).toEqual([]);
+      expect(contentSecurityPolicyViolations).toEqual([]);
     });
   }
 
@@ -70,7 +63,14 @@ test.describe('admin not-found page', () => {
   });
 });
 
-test('home pages still return 200', async ({ page }) => {
-  expect((await openSettledPage(page, `${storeOrigin}/`)).status).toBe(200);
-  expect((await openSettledPage(page, `${adminOrigin}/`)).status).toBe(200);
+test('home pages still return 200 with no CSP violations or page errors', async ({ page }) => {
+  for (const origin of [storeOrigin, adminOrigin]) {
+    const { status, uncaughtPageErrors, contentSecurityPolicyViolations } = await openSettledPage(
+      page,
+      `${origin}/`,
+    );
+    expect(status).toBe(200);
+    expect(uncaughtPageErrors).toEqual([]);
+    expect(contentSecurityPolicyViolations).toEqual([]);
+  }
 });

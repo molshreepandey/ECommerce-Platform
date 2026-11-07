@@ -23,7 +23,10 @@
     "db:reset": "prisma migrate reset --force && npm run db:seed",
     "docs:erd": "prisma generate --generator erd",
     "test:http": "vitest run --config vitest.http.config.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "postinstall": "prisma generate --generator client",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "start:test": "tsx scripts/start-test-server.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
@@ -40,6 +43,7 @@
     "react": "19.3.0",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.3.0",
+    "redis": "6.3.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

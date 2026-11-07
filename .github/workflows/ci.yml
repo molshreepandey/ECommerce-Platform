@@ -29,33 +29,41 @@ jobs:
         options: >-
           --health-cmd "curl -fs http://localhost:9200/_cluster/health || exit 1"
           --health-interval 10s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:8.10.3@sha256:1f88291b4c57bdf249f02eb085a8669889b2d2954e91d4de5118a5da6b78dd53
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
     env:
-      NODE_ENV: test
+      APP_ENV: development
       DATABASE_URL: postgresql://ecommerce:ecommerce@localhost:5432/ecommerce
+      TEST_DATABASE_URL: postgresql://ecommerce:ecommerce@localhost:5432/ecommerce_test
       ELASTICSEARCH_URL: http://localhost:9200
-      ELASTICSEARCH_INDEX_PREFIX: ci
-      STORE_HOSTS: store.localhost:3000
-      ADMIN_HOSTS: admin.localhost:3000
+      REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci
-      - run: npm run db:generate
+      - name: Install (postinstall also generates the Prisma client)
+        run: npm ci
       - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - run: npm run db:deploy
+      - name: Schema drift check (live database vs schema.prisma)
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
       - run: npm run db:seed
       - run: npm test
+      - run: npm run test:integration
       - run: npm run build
-      - name: Start the app
+      - name: Start the app in test mode (port and hosts from config/config.test.json)
         run: |
-          npm run start > app-server.log 2>&1 &
+          npm run start:test > app-server.log 2>&1 &
           for attempt in $(seq 1 60); do
-            curl -fs -H 'Host: store.localhost:3000' http://127.0.0.1:3000/api/health && break
+            curl -fs -H 'Host: store.localhost:3100' http://127.0.0.1:3100/api/health && break
             sleep 1
           done
       - run: npm run test:http

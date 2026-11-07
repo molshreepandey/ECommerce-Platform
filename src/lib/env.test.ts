@@ -4,11 +4,10 @@ import { InvalidEnvironmentError, parseEnvironment } from '@/lib/env';
 
 const validSource = {
   NODE_ENV: 'test',
-  DATABASE_URL: 'postgresql://ecommerce:ecommerce@localhost:5432/ecommerce',
+  APP_ENV: 'test',
+  DATABASE_URL: 'postgresql://ecommerce:ecommerce@localhost:5433/ecommerce_test',
   ELASTICSEARCH_URL: 'http://localhost:9200',
-  ELASTICSEARCH_INDEX_PREFIX: 'test',
-  STORE_HOSTS: 'store.localhost:3000, Shop.Example.com',
-  ADMIN_HOSTS: 'admin.localhost:3000',
+  REDIS_URL: 'redis://localhost:6379',
 };
 
 function parseIssues(source: Record<string, string | undefined>): readonly string[] {
@@ -22,24 +21,27 @@ function parseIssues(source: Record<string, string | undefined>): readonly strin
 }
 
 describe('parseEnvironment', () => {
-  it('parses a valid environment and normalises host lists', () => {
+  it('parses a valid environment', () => {
     const environment = parseEnvironment(validSource);
-    expect(environment.STORE_HOSTS).toEqual(['store.localhost:3000', 'shop.example.com']);
-    expect(environment.ADMIN_HOSTS).toEqual(['admin.localhost:3000']);
-    expect(environment.LOG_LEVEL).toBe('info');
+    expect(environment.APP_ENV).toBe('test');
+    expect(environment.APP_CONFIG_PATH).toBeUndefined();
+  });
+
+  it('accepts an explicit configuration file path', () => {
+    const environment = parseEnvironment({ ...validSource, APP_CONFIG_PATH: '/etc/app.json' });
+    expect(environment.APP_CONFIG_PATH).toBe('/etc/app.json');
   });
 
   it('reports every missing required variable', () => {
     const issues = parseIssues({});
-    for (const variableName of [
-      'DATABASE_URL',
-      'ELASTICSEARCH_URL',
-      'ELASTICSEARCH_INDEX_PREFIX',
-      'STORE_HOSTS',
-      'ADMIN_HOSTS',
-    ]) {
+    for (const variableName of ['APP_ENV', 'DATABASE_URL', 'ELASTICSEARCH_URL', 'REDIS_URL']) {
       expect(issues.some((issue) => issue.includes(variableName))).toBe(true);
     }
+  });
+
+  it('rejects an unknown application environment', () => {
+    const issues = parseIssues({ ...validSource, APP_ENV: 'prod' });
+    expect(issues.some((issue) => issue.includes('APP_ENV'))).toBe(true);
   });
 
   it('rejects a database URL that is not Postgres', () => {
@@ -47,18 +49,16 @@ describe('parseEnvironment', () => {
     expect(issues.some((issue) => issue.includes('DATABASE_URL'))).toBe(true);
   });
 
-  it('rejects an empty host list', () => {
-    const issues = parseIssues({ ...validSource, STORE_HOSTS: ' , ' });
-    expect(issues.some((issue) => issue.includes('STORE_HOSTS'))).toBe(true);
+  it('accepts TLS Redis URLs and rejects other protocols', () => {
+    expect(
+      parseEnvironment({ ...validSource, REDIS_URL: 'rediss://cache.example.com:6380' }).REDIS_URL,
+    ).toBe('rediss://cache.example.com:6380');
+    const issues = parseIssues({ ...validSource, REDIS_URL: 'http://localhost:6379' });
+    expect(issues.some((issue) => issue.includes('REDIS_URL'))).toBe(true);
   });
 
-  it('rejects a host configured for both surfaces', () => {
-    const issues = parseIssues({ ...validSource, ADMIN_HOSTS: 'store.localhost:3000' });
-    expect(issues.some((issue) => issue.includes('must not share a host'))).toBe(true);
-  });
-
-  it('rejects an unknown log level', () => {
-    const issues = parseIssues({ ...validSource, LOG_LEVEL: 'verbose' });
-    expect(issues.some((issue) => issue.includes('LOG_LEVEL'))).toBe(true);
+  it('rejects an Elasticsearch URL that is not http or https', () => {
+    const issues = parseIssues({ ...validSource, ELASTICSEARCH_URL: 'ftp://localhost:9200' });
+    expect(issues.some((issue) => issue.includes('ELASTICSEARCH_URL'))).toBe(true);
   });
 });

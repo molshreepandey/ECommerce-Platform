@@ -1,10 +1,11 @@
-export type DependencyName = 'postgres' | 'elasticsearch';
+export type DependencyName = 'postgres' | 'elasticsearch' | 'redis';
 export type DependencyStatus = 'up' | 'down';
 export type OverallHealthStatus = 'ok' | 'degraded' | 'unavailable';
 
 export const criticalDependencies: Record<DependencyName, boolean> = {
   postgres: true,
   elasticsearch: false,
+  redis: false,
 };
 
 export interface DependencyReport {
@@ -31,6 +32,7 @@ export function summarizeHealth(
   const checks: Record<DependencyName, DependencyReport> = {
     postgres: buildDependencyReport('postgres', dependencyStatuses),
     elasticsearch: buildDependencyReport('elasticsearch', dependencyStatuses),
+    redis: buildDependencyReport('redis', dependencyStatuses),
   };
   const downReports = Object.values(checks).filter((report) => report.status === 'down');
   if (downReports.some((report) => report.critical)) {

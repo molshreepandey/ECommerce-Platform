@@ -1,6 +1,6 @@
 import pino, { type Logger } from 'pino';
 
-import { getEnvironment } from '@/lib/env';
+import { getConfig } from '@/lib/config';
 
 const redactedPaths = [
   'password',
@@ -21,7 +21,7 @@ let rootLogger: Logger | undefined;
 
 export function getLogger(): Logger {
   rootLogger ??= pino({
-    level: getEnvironment().LOG_LEVEL,
+    level: getConfig().logging.level,
     base: { service: 'ecommerce-platform' },
     timestamp: pino.stdTimeFunctions.isoTime,
     redact: { paths: redactedPaths, censor: '[redacted]' },

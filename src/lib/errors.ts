@@ -45,6 +45,10 @@ export class DomainError extends Error {
     return httpStatusByErrorKind[this.kind];
   }
 
+  responseHeaders(): Record<string, string> {
+    return {};
+  }
+
   toEnvelope(): ErrorEnvelope {
     return { error: { code: this.code, message: this.message, details: this.details } };
   }

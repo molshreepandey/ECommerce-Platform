@@ -1,30 +1,15 @@
 import { z } from 'zod';
 
-const hostListSchema = z
-  .string()
-  .transform((commaSeparatedHosts) =>
-    commaSeparatedHosts
-      .split(',')
-      .map((host) => host.trim().toLowerCase())
-      .filter((host) => host.length > 0),
-  )
-  .pipe(z.array(z.string()).min(1, 'At least one host is required'));
+import { appEnvironmentSchema } from '@/lib/config/config.schema';
 
-export const environmentSchema = z
-  .object({
-    NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-    LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
-    DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
-    ELASTICSEARCH_URL: z.url({ protocol: /^https?$/ }),
-    ELASTICSEARCH_INDEX_PREFIX: z.string().regex(/^[a-z0-9_-]+$/),
-    STORE_HOSTS: hostListSchema,
-    ADMIN_HOSTS: hostListSchema,
-  })
-  .refine(
-    (environment) =>
-      !environment.STORE_HOSTS.some((host) => environment.ADMIN_HOSTS.includes(host)),
-    { message: 'STORE_HOSTS and ADMIN_HOSTS must not share a host', path: ['ADMIN_HOSTS'] },
-  );
+export const environmentSchema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  APP_ENV: appEnvironmentSchema,
+  APP_CONFIG_PATH: z.string().min(1).optional(),
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  ELASTICSEARCH_URL: z.url({ protocol: /^https?$/ }),
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+});
 
 export type Environment = z.infer<typeof environmentSchema>;
 

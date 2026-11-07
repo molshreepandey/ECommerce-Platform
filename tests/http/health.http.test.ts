@@ -14,6 +14,7 @@ describe('GET /api/health with every dependency running', () => {
       checks: {
         postgres: { status: 'up', critical: true },
         elasticsearch: { status: 'up', critical: false },
+        redis: { status: 'up', critical: false },
       },
     });
   });

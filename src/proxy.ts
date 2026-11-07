@@ -1,10 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
-import { getEnvironment } from '@/lib/env';
+import { getConfig } from '@/lib/config';
 import { decideHostRouting } from '@/lib/host-routing';
 import { REQUEST_ID_HEADER, SURFACE_HEADER } from '@/lib/request-headers';
+import { buildRuntimeSecurityHeaders } from '@/lib/security-headers';
 
 const safeRequestIdPattern = /^[A-Za-z0-9-]{8,64}$/;
+const unknownHostContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+
+function withHeaders(response: NextResponse, headers: Record<string, string>): NextResponse {
+  for (const [name, value] of Object.entries(headers)) response.headers.set(name, value);
+  return response;
+}
 
 function notFoundResponse(pathname: string): NextResponse {
   if (pathname.startsWith('/api/')) {
@@ -17,14 +24,25 @@ function notFoundResponse(pathname: string): NextResponse {
 }
 
 export function proxy(request: NextRequest): NextResponse {
-  const environment = getEnvironment();
+  const config = getConfig();
+  const { surfaces } = config;
   const { pathname } = request.nextUrl;
   const decision = decideHostRouting(
     { host: request.headers.get('host'), pathname },
-    { storeHosts: environment.STORE_HOSTS, adminHosts: environment.ADMIN_HOSTS },
+    { storeHosts: surfaces.store.hosts, adminHosts: surfaces.admin.hosts },
   );
 
-  if (decision.kind === 'not_found') return notFoundResponse(pathname);
+  if (decision.kind === 'not_found') {
+    return withHeaders(notFoundResponse(pathname), {
+      'Content-Security-Policy': unknownHostContentSecurityPolicy,
+    });
+  }
+
+  const securityHeaders = buildRuntimeSecurityHeaders({
+    config,
+    surface: decision.surface,
+    isDevelopmentServer: process.env.NODE_ENV === 'development',
+  });
 
   const incomingRequestId = request.headers.get(REQUEST_ID_HEADER);
   const forwardedHeaders = new Headers(request.headers);
@@ -37,12 +55,18 @@ export function proxy(request: NextRequest): NextResponse {
   forwardedHeaders.set(SURFACE_HEADER, decision.surface);
 
   if (decision.kind === 'continue') {
-    return NextResponse.next({ request: { headers: forwardedHeaders } });
+    return withHeaders(
+      NextResponse.next({ request: { headers: forwardedHeaders } }),
+      securityHeaders,
+    );
   }
 
   const rewrittenUrl = request.nextUrl.clone();
   rewrittenUrl.pathname = decision.pathname;
-  return NextResponse.rewrite(rewrittenUrl, { request: { headers: forwardedHeaders } });
+  return withHeaders(
+    NextResponse.rewrite(rewrittenUrl, { request: { headers: forwardedHeaders } }),
+    securityHeaders,
+  );
 }
 
 export const config = {

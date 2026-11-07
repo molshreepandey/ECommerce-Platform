@@ -1,20 +1,20 @@
 import { Client } from '@elastic/elasticsearch';
 
+import { getConfig } from '@/lib/config';
 import { getEnvironment } from '@/lib/env';
-
-const requestTimeoutMilliseconds = 2_000;
 
 let elasticsearchClient: Client | undefined;
 
 export function getElasticsearchClient(): Client {
+  const { elasticsearch } = getConfig();
   elasticsearchClient ??= new Client({
     node: getEnvironment().ELASTICSEARCH_URL,
-    requestTimeout: requestTimeoutMilliseconds,
-    maxRetries: 0,
+    requestTimeout: elasticsearch.requestTimeoutMilliseconds,
+    maxRetries: elasticsearch.maxRetries,
   });
   return elasticsearchClient;
 }
 
 export function buildIndexName(baseIndexName: string): string {
-  return `${getEnvironment().ELASTICSEARCH_INDEX_PREFIX}_${baseIndexName}`;
+  return `${getConfig().elasticsearch.indexPrefix}_${baseIndexName}`;
 }

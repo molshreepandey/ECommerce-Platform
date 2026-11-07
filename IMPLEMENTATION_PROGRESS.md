@@ -5,7 +5,9 @@ Spec: `~/Downloads/ECOMMERCE_PLATFORM_PLAN.md` (read-only). Waves follow plan se
 ## Waves
 
 - [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6` on `main`, on GitHub (private); CI result not yet verified)
-- [ ] Waves 2–16 (not started; Wave 2 waits for the owner's explicit approval)
+- [x] Wave 2A — Platform groundwork (approved by the owner on 2026-11-07; committed locally on `main`, not pushed; not yet tested by CI)
+- [ ] Wave 2B — Identity, access, audit (not started; waits for approval of Wave 2A)
+- [ ] Waves 3–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 ## Environment decisions (2026-11-07)
 
@@ -787,3 +789,150 @@ Not modified. No `db:reset`, no migrations, no seed runs in this step.
 | 13  | Git 2.15.0 is old                                                         | Open; upgrade recommended                                                                                                                          |
 | 14  | Git `user.email` not configured                                           | **Resolved for this repository** (repo-local no-reply address); global email still unset                                                           |
 | 15  | Token permissions                                                         | New. The Keychain token cannot read Actions results; any token used here must include Workflows (write) for pushes that touch `.github/workflows/` |
+
+## Housekeeping before Wave 2 (2026-11-07)
+
+| Step                                                          | Result                                                                                                                     |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Push `d7e3a0e`                                                | ✅ `fa6ebd6..d7e3a0e main -> main`; remote `main` = `d7e3a0e`; 0 ahead / 0 behind                                          |
+| Verify GitHub Actions                                         | ❌ still blocked: `GET /actions/runs` → 403 "Resource not accessible by personal access token" (token lacks Actions: read) |
+| Fresh-clone test (cloned from GitHub; dev database untouched) | ✅ with one bug found (below)                                                                                              |
+
+Fresh-clone details:
+
+- The clone's `HEAD` and tree were identical to local `d7e3a0e` (164 files).
+- Docker Compose was **not** run from the clone: the fixed project name `ecommerce-platform` would have made Docker recreate the running containers.
+- The clone used a throwaway database `ecommerce_freshclone_check`, which was dropped afterwards.
+- **Bug:** following the README, `npm run db:seed` failed with `ERR_MODULE_NOT_FOUND … src/generated/prisma/client`, because nothing generated the Prisma client (CI only worked because it ran `db:generate` explicitly). **Fixed in Wave 2A item 1.**
+- With `db:generate` added, everything passed in the clone:
+  - `db:deploy`; `db:seed` twice
+  - typecheck, lint, format; 34 unit tests; build
+  - 13 HTTP and 18 browser tests against the clone's own server; health 200
+- Seed reproducibility: row counts were identical to the dev database (1,625). With timestamp and UUID columns excluded, all 45 data tables had identical content.
+  - An earlier claim that the differences were "only timestamps" was wrong and was corrected by that check.
+- **Mistake caught during the test:** the first `npm ci` in the clone ran under Node 20 because `nvm use` had been piped into a subshell. That run was discarded and redone under Node 26.13.0. It exposed that nothing enforced the Node version (**fixed in Wave 2A item 1**).
+- Dev database fingerprint before and after the test: `84956ffb57af5da58ba41b5ea154611d` (identical).
+
+## Owner decisions for Wave 2A (2026-11-07)
+
+1. Wave 2A approved, together with the Razorpay Test Mode + simulator architecture for Wave 8B.
+2. Configuration must separate build-time from runtime, so staging and production change settings without a rebuild (TD-002).
+3. Redis pinned to an exact tested version (TD-003).
+4. The integration-test database guard must be strict and run before migrations, truncation and cleanup (TD-005).
+5. Local Razorpay webhook testing must be isolated (TD-008).
+6. Argon2id for Wave 2B, subject to compatibility and performance tests (TD-009).
+7. The requirements matrix is kept in `docs/REQUIREMENTS_TRACEABILITY.md`.
+8. No destructive database operations, commits or pushes without approval.
+
+## Wave 2A: platform groundwork (2026-11-07, complete, awaiting owner approval)
+
+### What was built, by work item
+
+| #   | Item                                 | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| --- | ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Fresh-clone fix and Node enforcement | `postinstall: prisma generate`; `.npmrc` `engine-strict=true`; README setup uses `db:deploy` + `db:seed` and warns about the shared Compose project name. Verified in a scratch copy: Node 26 `npm ci` generates the client; Node 20 `npm ci` is refused with `EBADENGINE` before installing                                                                                                                                                                                                                                                        |
+| 2   | Runtime configuration                | `config/config.{development,test,staging,production}.json`; `src/lib/config/` (Zod schema with strict objects, loader, `getConfig()`); `src/lib/env.ts` reduced to `APP_ENV`, `APP_CONFIG_PATH`, `DATABASE_URL`, `ELASTICSEARCH_URL`, `REDIS_URL`; `outputFileTracingIncludes` for `config/*.json`; startup validation through `src/instrumentation.ts` → `instrumentation-node.ts` (exits with code 1 when invalid). Hard-coded values moved: hosts, log level, Elasticsearch prefix/timeout/retries, health probe timeout, database pool settings |
+| 3   | Redis                                | `redis:8.10.3@sha256:1f88291b…` in Compose (localhost only, no persistence, 128 MB, `volatile-lru`); `redis@6.3.1` exact; `src/lib/redis.ts` with app-level reply deadline, stuck-client discard and 5 s circuit-breaker cooldown; Redis in `/api/health` as non-critical                                                                                                                                                                                                                                                                           |
+| 4   | Rate limiter                         | `src/lib/rate-limit/`: fixed windows; SHA-256-hashed identifiers; Redis Lua store; Postgres `INSERT … ON CONFLICT … RETURNING` store; fallback with throttled logging; fails closed if both stores fail; `RateLimitExceededError` → 429 + `Retry-After` (through a new `DomainError.responseHeaders()` hook)                                                                                                                                                                                                                                        |
+| 5   | Integration harness                  | `tests/support/test-target-guard.ts` (URL and `current_database()` checks; Redis prefix check); `tests/support/test-database-setup.ts`; `vitest.integration.config.ts`; `npm run test:integration`                                                                                                                                                                                                                                                                                                                                                  |
+| 6   | First integration tests              | `test-harness`, `database-constraints`, `rate-limit`, `rate-limit-redis-down` (18 tests)                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| 7   | Security headers and origin check    | Runtime CSP/HSTS from config set in `src/proxy.ts` (unknown hosts get `default-src 'none'`); build-time invariant headers in `next.config.ts`; same-origin check for `POST`/`PUT`/`PATCH`/`DELETE` in `apiHandler`                                                                                                                                                                                                                                                                                                                                  |
+| 8   | Test plumbing                        | `tests/support/test-app.ts` (URLs from `config.test.json`); `scripts/start-test-server.ts` (`npm run start:test`: guard, create and migrate test DB, start the built app with `APP_ENV=test` on port 3100); Playwright and HTTP tests read URLs from config; browser tests fail on CSP violations                                                                                                                                                                                                                                                   |
+| 9   | CI                                   | Redis service (same pinned digest); new env variables; `npm ci` now generates the client itself; drift check `prisma migrate diff --from-config-datasource --to-schema … --exit-code`; integration tests; `start:test`; HTTP and browser tests                                                                                                                                                                                                                                                                                                      |
+| 10  | Docs                                 | New: `docs/TECHNICAL_DECISIONS.md` (TD-001…010), `ARCHITECTURE.md`, `TESTING_STRATEGY.md`, `DEPLOYMENT_GUIDE.md`, `API_DOCUMENTATION.md`, `DATABASE_DESIGN.md`, `REQUIREMENTS_TRACEABILITY.md`, `walkthroughs/wave-2a.md`. Updated: `docs/redis-design.md` (pinned version, client findings), README                                                                                                                                                                                                                                                |
+
+### Bugs and surprises found during Wave 2A, all fixed and verified
+
+| Finding                                                                                | Evidence                                                                                                                     | Fix                                                                                                                                        |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fresh clone could not seed (no Prisma client)                                          | `ERR_MODULE_NOT_FOUND` in the clone                                                                                          | `postinstall` generate; verified by `npm ci` in a scratch copy                                                                             |
+| Wrong Node version only produced warnings                                              | `EBADENGINE` warnings under Node 20                                                                                          | `.npmrc` `engine-strict=true`; Node 20 install now refused                                                                                 |
+| Build warned "Node.js API … not supported in the Edge Runtime" (3 warnings)            | Next compiles instrumentation for Edge too                                                                                   | Node-only startup code behind `NEXT_RUNTIME === 'nodejs'` dynamic import; build has 0 warnings                                             |
+| Invalid config left the server running and answering 500                               | `next start` stayed up; requests returned 500                                                                                | `process.exit(1)` on invalid config; verified exit code 1 and nothing listening                                                            |
+| node-redis command timeouts did not cancel a reply from a frozen Redis                 | `commandOptions.timeout`, per-call timeout and `AbortSignal` all still pending after 4 s; health took 2.01 s (probe timeout) | app-level deadline in `runRedisCommand`; frozen Redis now costs ~0.5 s                                                                     |
+| `socket.socketTimeout` also dropped idle connections                                   | 5 reconnects in 3 idle seconds                                                                                               | not used; idle check with the final client: no reconnects                                                                                  |
+| Every request waited 500 ms during a Redis outage; one stack-trace warning per request | 6 rate-limit calls took 2,281 ms; 6 warnings                                                                                 | 5 s circuit-breaker cooldown and throttled fallback log: 745 ms for 6 calls, 2 log lines                                                   |
+| Browser tests against a **cold** `next dev` time out in a reload loop                  | 9/9 failed; 0 CSP violations recorded; HMR connected                                                                         | not a code bug: a warm dev server passed 9/9 twice with CSP checks. Documented as a limitation; CI and `test:e2e` use the production build |
+
+### Mistakes made and corrected during Wave 2A (process)
+
+- `nvm install 20` was run instead of `nvm use 20` during the engine test. It installed Node 20.20.2 and moved the default nvm alias. It was uninstalled at once; the default is back to v20.19.6.
+- `timeout` does not exist on macOS, so the first "invalid config makes start exit" check never ran (exit code 127). It was rerun correctly: exit code 1.
+- Prettier was given `.env.example`, failed, and stopped a chained command before tests ran. It was rerun without that file.
+
+### Test results (final regression, 2026-11-07 13:18 UTC, Node v26.13.0)
+
+| Check                                           | Command                             | Result                                                                                                                |
+| ----------------------------------------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Format                                          | `npm run format:check`              | exit 0                                                                                                                |
+| Lint                                            | `npm run lint` (`--max-warnings 0`) | exit 0                                                                                                                |
+| Type check                                      | `npm run typecheck`                 | exit 0                                                                                                                |
+| Unit                                            | `npm test`                          | **99 / 99** (9 files)                                                                                                 |
+| Integration (real Postgres test DB + Redis)     | `npm run test:integration`          | **18 / 18** (4 files)                                                                                                 |
+| Build (`.next` deleted first)                   | `npx next build`                    | exit 0, **0 warnings**                                                                                                |
+| Browser (Playwright starts `start:test` itself) | `npm run test:e2e`                  | **18 / 18** (desktop + 360 px, no CSP violations, no page errors)                                                     |
+| HTTP                                            | `npm run test:http`                 | **19 / 19**                                                                                                           |
+| Dev-config server                               | `npm run start`                     | health 200 `ok` on both hosts (Postgres, Elasticsearch, Redis up); pages 200; 404 correct; 5 security headers present |
+| Containers                                      | `docker compose ps`                 | postgres 18.6, elasticsearch 9.5.5, redis 8.10.3 (digest): all healthy, all on `127.0.0.1`                            |
+
+Integration evidence highlights:
+
+- 20 parallel guarded reservations against 7 units → exactly 7 reserved, 13 refused, available = 0.
+- 50 parallel rate-limit calls with a limit of 5 → exactly 5 allowed, with Redis and with Postgres alone. Postgres stored one row with `request_count = 50`; no raw identifiers in keys or rows.
+- Redis unreachable (real connection to a closed port) → Postgres enforced the limit; 6 calls in 745 ms.
+- The harness refused to truncate when `DATABASE_URL` pointed at the dev database, before any SQL ran.
+
+Earlier item-level checks:
+
+- Same build started with two runtime configs (store host switched with no rebuild; `BUILD_ID` unchanged).
+- Redis stop, pause and recovery drills on health: 200 `degraded`; ~0.5 s when frozen; recovered without restart.
+
+### Database verification
+
+- Dev database fingerprint at the start of Wave 2A: `84956ffb57af5da58ba41b5ea154611d` (46 tables, 1,625 rows).
+- At the end: **identical** (every table's row count and content hash).
+- No `db:reset`, no migration applied to the dev database, no seed run against it.
+- `ecommerce_test` now holds the migrated schema (46 tables) and is emptied by the tests.
+- No Redis keys left over.
+
+### Known limitations after Wave 2A
+
+1. **CI not observed:** the token cannot read Actions results. The workflow is checked structurally, and every command in it was run locally.
+2. **Origin check not exercised over HTTP:** it is unit-tested (13 cases), but no state-changing endpoint exists yet. A `POST` to `/api/health` gets 405 from Next.js before the check runs. Wave 2B must add HTTP tests for 403 `ORIGIN_NOT_ALLOWED`.
+3. **Rate limiter not wired to any endpoint yet** (Wave 2B: login and register).
+4. **Rate-limit window boundary:** a fixed window allows up to 2× the limit across a window boundary. Old Postgres counter rows are not cleaned up yet.
+5. **CSP strength:** `script-src` keeps `'unsafe-inline'` (no nonces, because of Partial Prerendering).
+6. **Cold dev server:** browser tests against a cold `next dev` time out; use `npm run test:e2e` (production build) or warm the dev server first.
+7. **Redis cooldown:** for up to 5 s after a Redis failure, Redis is skipped even if it has recovered.
+8. **Hosted config placeholders:** staging and production config files use `example.com` placeholder hosts until Wave 15.
+9. **Webhook isolation not built yet:** the isolated local webhook routing (`webhookHosts`) is designed (TD-008) but built in Wave 8B.
+
+### Outstanding risks (updated after Wave 2A)
+
+| #   | Risk                                                                      | Status                                                                                                    |
+| --- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1   | CI never observed                                                         | Open (token needs Actions: read)                                                                          |
+| 2   | `npm run db:reset` unverified                                             | Open, by owner decision                                                                                   |
+| 3   | Fresh-clone install                                                       | **Resolved**: tested, bug fixed, Node pinned                                                              |
+| 4   | `experimental.globalNotFound`                                             | Open; guarded by tests                                                                                    |
+| 5   | `notFound()` inside a real page                                           | Open; Wave 6                                                                                              |
+| 6   | Elasticsearch non-critical only until the Postgres search fallback exists | Open; Wave 6                                                                                              |
+| 7   | Redis approved, not implemented                                           | **Resolved for infrastructure** (client, health, rate limiter); caching is still to come (Waves 6, 7, 10) |
+| 8   | No DB-backed integration tests                                            | **Resolved**: harness + 18 tests                                                                          |
+| 9   | 13 dev-only advisories                                                    | Open; Wave 14 (re-check: `npm audit --omit=dev` still 0)                                                  |
+| 10  | Native Postgres on :5432                                                  | Mitigated                                                                                                 |
+| 11  | Seeded passwords are placeholders                                         | Open; Wave 2B                                                                                             |
+| 12  | Local development credentials in template and compose file                | Accepted for development                                                                                  |
+| 13  | Git 2.15.0 is old                                                         | Open                                                                                                      |
+| 14  | Git `user.email`                                                          | Resolved for this repository                                                                              |
+| 15  | Token cannot read Actions                                                 | Open                                                                                                      |
+| 16  | Origin check not exercised over HTTP                                      | New; Wave 2B                                                                                              |
+| 17  | node-redis timeout behaviour                                              | Mitigated by the app-level deadline; re-check on any client upgrade                                       |
+
+## Wave 2A approval and CI status (2026-11-07)
+
+- **Owner approved** the Wave 2A final checks and a local commit; **no push**.
+- **CI, reported by the owner:** the GitHub Actions page shows two workflow runs with green marks.
+- **CI, checked by the agent:** not possible. `GET /actions/runs`, `/commits/d7e3a0e…/check-runs` and `/commits/d7e3a0e…/status` all return 403 "Resource not accessible by personal access token" (the token still lacks Actions: read).
+- **What the green runs can and cannot cover:** only `fa6ebd6` and `d7e3a0e` have ever been pushed, so they must be runs for those commits, using the **Wave 1 workflow** (no Redis service, no integration tests, no `start:test`). Each run's short SHA is visible in the Actions UI to confirm.
+- **Wave 2A has not been tested by CI.** It is committed locally only; its new workflow first runs on the next approved push.

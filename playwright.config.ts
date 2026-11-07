@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { storeOrigin } from './tests/support/test-app';
+
 const isContinuousIntegration = process.env['CI'] !== undefined;
 
 export default defineConfig({
@@ -21,8 +23,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run start',
-    url: 'http://store.localhost:3000/api/health',
+    command: 'npm run start:test',
+    url: `${storeOrigin}/api/health`,
     reuseExistingServer: true,
     timeout: 60_000,
   },
