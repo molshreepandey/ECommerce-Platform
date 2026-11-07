@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6
+        env:
+          POSTGRES_USER: ecommerce
+          POSTGRES_PASSWORD: ecommerce
+          POSTGRES_DB: ecommerce
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U ecommerce -d ecommerce"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      elasticsearch:
+        image: elasticsearch:9.5.5
+        env:
+          discovery.type: single-node
+          xpack.security.enabled: 'false'
+          ES_JAVA_OPTS: -Xms512m -Xmx512m
+        ports: ['9200:9200']
+        options: >-
+          --health-cmd "curl -fs http://localhost:9200/_cluster/health || exit 1"
+          --health-interval 10s --health-timeout 5s --health-retries 30
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://ecommerce:ecommerce@localhost:5432/ecommerce
+      ELASTICSEARCH_URL: http://localhost:9200
+      ELASTICSEARCH_INDEX_PREFIX: ci
+      STORE_HOSTS: store.localhost:3000
+      ADMIN_HOSTS: admin.localhost:3000
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run db:deploy
+      - run: npm run db:seed
+      - run: npm test
+      - run: npm run build
+      - name: Start the app
+        run: |
+          npm run start > app-server.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            curl -fs -H 'Host: store.localhost:3000' http://127.0.0.1:3000/api/health && break
+            sleep 1
+          done
+      - run: npm run test:http
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts
+          path: |
+            app-server.log
+            playwright-report/
+            test-results/
