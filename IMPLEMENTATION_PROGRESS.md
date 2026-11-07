@@ -4,7 +4,7 @@ Spec: `~/Downloads/ECOMMERCE_PLATFORM_PLAN.md` (read-only). Waves follow plan se
 
 ## Waves
 
-- [x] Wave 1 — Foundation (approved by the owner on 2026-11-07 and committed on `main`; not pushed)
+- [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6` on `main`, on GitHub (private); CI result not yet verified)
 - [ ] Waves 2–16 (not started; Wave 2 waits for the owner's explicit approval)
 
 ## Environment decisions (2026-11-07)
@@ -707,3 +707,83 @@ Two lines of this journal contained the home directory (`/Users/<name>/.orbstack
 | 12  | Local development credentials are committed in the template and compose file                        | Development only; hosted credentials go in environment variables, never in the repo              |
 | 13  | Git 2.15.0 is old                                                                                   | Upgrade recommended; no current blocker                                                          |
 | 14  | Git `user.email` is not configured on this machine                                                  | Set it before the next commit (the Wave 1 commit used the identity the owner chose)              |
+
+## Wave 1 commit, remote and first push (2026-11-07)
+
+### Commit
+
+- `fa6ebd63828f6d6bc653ee874adeb6c55f0ffe84` on `main`: "Wave 1: foundation for two-domain e-commerce platform", 164 files, 25,026 insertions.
+- Author and committer: `molshree <149938122+molshreepandey@users.noreply.github.com>`, set in the repository's local Git config only (`git config --local user.email`); the global Git config is unchanged.
+- After the commit: `nothing to commit, working tree clean`; `git fsck` clean; containers healthy; database fingerprint unchanged (`84956ffb57af5da58ba41b5ea154611d`, 46 tables, 1,625 rows).
+
+### Remote setup and checks before pushing
+
+- No `gh` CLI and no SSH keys (`git@github.com: Permission denied (publickey)`). That SSH test added GitHub's host key to `~/.ssh/known_hosts` (harmless side effect). The macOS Keychain holds an HTTPS GitHub login for `molshreepandey`.
+- The owner created an empty **private** repository `molshreepandey/ECommerce-Platform` on github.com.
+- `origin` = `https://github.com/molshreepandey/ECommerce-Platform.git` (fetch and push).
+- `git ls-remote origin` → exit 0, 0 refs (empty, readable with the Keychain login).
+- Anonymous checks: `git ls-remote` with the credential helper disabled → `could not read Username` (refused); web page → 404. The anonymous API check was rate-limited (`0 of 60` for the network's shared IP), so it was inconclusive and not relied on.
+- `git push --dry-run origin main` → exit 0 (`[new branch]`), nothing sent, still 0 refs afterwards.
+
+### First push attempt: rejected
+
+```
+$ git push -u origin main
+ ! [remote rejected] main -> main (refusing to allow a Personal Access Token to create or update workflow `.github/workflows/ci.yml` without `workflow` scope)
+```
+
+- Nothing reached GitHub (0 refs afterwards); local `main` unchanged.
+- **Verification gap:** the dry run proved general push access but not GitHub's extra check for workflow files, which only runs when objects are actually sent. Future token checks should include this permission explicitly.
+- Fix, done by the owner: a new fine-grained token with **Contents: read and write** and **Workflows: read and write**, stored in the Keychain (Keychain entry modified 2026-11-07).
+
+### Second push
+
+```
+$ git ls-remote origin            → 2 refs already present
+$ git push -u origin main
+Everything up-to-date
+Branch 'main' set up to track remote branch 'main' from 'origin'.
+```
+
+`main` was already on GitHub when this retry ran (the remote had 2 refs before the command), so the objects were not sent by this command; Git only set up tracking. Verified what is on the remote:
+
+| Check                                     | Result                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Remote refs                               | `HEAD` → `refs/heads/main`; `refs/heads/main` = `fa6ebd63828f6d6bc653ee874adeb6c55f0ffe84` |
+| Remote `main` = local `main` = `fa6ebd6…` | ✅ match (`git fetch`, `git rev-parse`)                                                    |
+| Commits on `origin/main`                  | 1                                                                                          |
+| Ahead/behind                              | 0 / 0; `Your branch is up to date with 'origin/main'`                                      |
+| Visibility (GitHub API, authenticated)    | `private: true`, `visibility: "private"`, `default_branch: "main"`                         |
+| Anonymous access                          | Git refused; web page 404                                                                  |
+
+### CI (GitHub Actions): NOT verified
+
+Every read path for CI results returned **403 "Resource not accessible by personal access token"**: `/actions/runs`, `/actions/workflows`, `/actions/permissions`, `/commits/{sha}/check-runs`, `/commits/{sha}/check-suites`, `/commits/{sha}/status`. The token has Contents and Workflows permissions but not **Actions: read**, so from this machine it is unknown whether the push triggered a CI run and whether it passed. **CI is still unverified.**
+
+To verify, either give the fine-grained token **Actions: read-only** (the token value stays the same, so the Keychain needs no change), or check github.com/molshreepandey/ECommerce-Platform/actions and report the run's status and failing step.
+
+A testing mistake on the way: one probe script named a shell loop variable `path`, which in zsh overwrites `PATH`, so `curl` and `python3` "were not found". The script was rerun with a different variable name; the 403 results above come from that rerun.
+
+### Database
+
+Not modified. No `db:reset`, no migrations, no seed runs in this step.
+
+### Outstanding risks (updated)
+
+| #   | Risk                                                                      | Status                                                                                                                                             |
+| --- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | CI has never been observed running                                        | **Open.** The push succeeded, but the CI result cannot be read with the current token (needs Actions: read)                                        |
+| 2   | `npm run db:reset` unverified                                             | Open, by owner decision                                                                                                                            |
+| 3   | Fresh-clone `npm ci` untested                                             | Open. Now possible: clone from `origin` into a temp directory                                                                                      |
+| 4   | `experimental.globalNotFound`                                             | Open; guarded by the 404 tests                                                                                                                     |
+| 5   | `notFound()` inside a real page untested                                  | Open; Wave 6                                                                                                                                       |
+| 6   | Elasticsearch non-critical only until the Postgres search fallback exists | Open; Wave 6                                                                                                                                       |
+| 7   | Redis approved, not implemented                                           | Open; Wave 2 onwards                                                                                                                               |
+| 8   | No DB-backed integration tests                                            | Open; Wave 2                                                                                                                                       |
+| 9   | 13 dev-only advisories                                                    | Open; Wave 14                                                                                                                                      |
+| 10  | Native Postgres on :5432                                                  | Mitigated (Docker Postgres on 127.0.0.1:5433)                                                                                                      |
+| 11  | Seeded passwords are placeholders                                         | Open; Wave 2                                                                                                                                       |
+| 12  | Local development credentials in the template and compose file            | Accepted for development; never for hosted databases                                                                                               |
+| 13  | Git 2.15.0 is old                                                         | Open; upgrade recommended                                                                                                                          |
+| 14  | Git `user.email` not configured                                           | **Resolved for this repository** (repo-local no-reply address); global email still unset                                                           |
+| 15  | Token permissions                                                         | New. The Keychain token cannot read Actions results; any token used here must include Workflows (write) for pushes that touch `.github/workflows/` |
