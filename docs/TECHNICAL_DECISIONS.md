@@ -332,3 +332,41 @@ returned 200 or an empty shell; the full investigation is in `IMPLEMENTATION_PRO
   the real topology (see DEPLOYMENT_GUIDE). For example, a platform that overwrites the header with the
   client address, or a single appending proxy, needs 1; a CDN in front of a load balancer needs 2.
 - **Not done (separate decision):** a per-account sign-in limit keyed on email alone (L20).
+
+## TD-016 Catalogue integrity: schema rules and the lifecycle contract (Wave 3)
+
+Migration `20261110093000_catalogue_integrity` (additive). Reverse script:
+`prisma/rollbacks/20261110093000_catalogue_integrity.down.sql` (Prisma has no down migrations).
+
+- **Enforced by the database:**
+  - `products.version` (starts at 0, never negative): an edit sends the version it read, and the update
+    is `… WHERE id = $id AND version = $read`, setting `version = version + 1`. Zero rows means someone
+    else saved first: 409 `STALE_PRODUCT`. `updated_at` cannot do this job, because the database stores
+    microseconds and JavaScript dates have milliseconds.
+  - `product_media(product_id, variant_id)` references `product_variants(product_id, id)`, with update
+    and delete restricted. An image cannot point at another product's variant, and a variant with images
+    can be neither deleted nor moved to another product. Product-level images (no variant) are unaffected.
+  - `status = 'ARCHIVED'` exactly when `archived_at` is set.
+  - Formats: slugs `^[a-z0-9]+(-[a-z0-9]+)*$`, type and attribute codes `^[a-z][a-z0-9_]{0,39}$`, SKUs
+    `^[A-Z0-9]+(-[A-Z0-9]+)*$` (at most 64 characters).
+  - ENUM and MULTI_ENUM attributes have a non-empty array of allowed values; other types have none;
+    variant options must be ENUM.
+  - Image positions start at 0 and every image has non-blank alt text (the column default `''` was
+    removed, so the generated types require it).
+- **Enforced by the Wave 3 services, with tests (owner requirements, 2026-11-10):**
+  1. **An ACTIVE product always has at least one ACTIVE variant.** Archiving or deactivating its last
+     active variant is refused (409) until the product is moved to DRAFT. Activating a product needs at
+     least one active variant (422). Both run inside the transaction that holds the product row lock.
+  2. **Archiving never touches inventory.** Archiving a product or variant only changes its status. It
+     never deletes, edits or releases `inventory_levels` rows or reservations, never deletes
+     `inventory_movements`, and never changes order lines, carts, reviews or collection links. Open
+     orders keep their reservations and are fulfilled normally. Tests assert those rows are byte-identical
+     before and after an archive with reserved stock.
+  3. **Image deletion is audited in full.** The audit row's `before` keeps the image id, product id,
+     variant id (or null), URL, alt text and position. Order lines keep their own `image_url` snapshot.
+  4. **SKUs, variant option values and a product's type are never changed after creation.** A product's
+     slug changes only while it is a DRAFT. Update schemas do not accept these fields.
+- **Why not database triggers for 1 and 4:** the project has none, and these rules span rows (rule 1) or
+  are simplest as "the update statement never includes the column" (rule 4). Service tests prove them.
+- **Kept for later waves:** see `docs/DATABASE_DESIGN.md`, "Integrity requirements for later waves"
+  (the order-item composite key and the weight and dimension snapshot, both mandatory in Wave 8).

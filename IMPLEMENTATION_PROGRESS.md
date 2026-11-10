@@ -1420,3 +1420,93 @@ for the committed test configuration and passes on both.
 
 1. Review of check 7.
 2. The local Wave 2B commit (now including check 7). Push not approved. Wave 3 not started.
+
+## Wave 3 step 1: catalogue integrity migration on the test database (2026-11-10, done; awaiting owner review)
+
+Approved scope: one additive migration, tested on `ecommerce_test` **only** (apply, rollback, re-apply,
+drift, full seed, integration tests). Not done, by instruction: nothing applied to the development
+database, no `db:reset`, no reseed of development, no commit or push, no other Wave 3 code.
+
+Every test-database command ran through a wrapper that calls the project's `assertTestDatabaseUrl` guard
+first (it printed `guard passed: target database ecommerce_test (development is ecommerce)` each time) and
+never prints connection strings. The rollback script was run with `psql -d ecommerce_test` named
+explicitly.
+
+### Changes
+
+| File                                                                 | Change                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prisma/schema.prisma`                                               | `Product.version Int @default(0)`; `@@index([name, id])` on products; `@@unique([productId, id])` and a GIN `jsonb_path_ops` index on `product_variants.option_values`; `ProductMedia.variant` becomes a composite relation `(productId, variantId) → (productId, id)`, update/delete RESTRICT; `alt_text` loses its `''` default |
+| `prisma/migrations/20261110093000_catalogue_integrity/migration.sql` | Prisma-generated DDL (from `migrate diff` against the test DB) + 11 hand-written CHECKs. Destructive-statement scan: only the planned FK swap and `DROP DEFAULT`                                                                                                                                                                  |
+| `prisma/rollbacks/20261110093000_catalogue_integrity.down.sql`       | new reverse script (single transaction)                                                                                                                                                                                                                                                                                           |
+| `tests/integration/catalogue-constraints.test.ts`                    | new: 26 tests                                                                                                                                                                                                                                                                                                                     |
+| `tests/integration/identity-constraints.test.ts`                     | migration-list assertion now checks its own migration is present instead of the exact list of two                                                                                                                                                                                                                                 |
+| Docs                                                                 | TD-016; `DATABASE_DESIGN.md` constraints and mandatory Wave 8 requirements; L22, L23; `er-diagram.svg` regenerated (`npm run docs:erd`)                                                                                                                                                                                           |
+
+### Test database evidence
+
+| Step                                                       | Result                                                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline                                                   | 36 CHECK, 55 FK, 134 indexes, 2 migrations; schema snapshot of 1,036 columns/constraints/indexes saved                                                                                                                                                                                |
+| Seed before migrating (`db:seed`, `APP_ENV=test`, guarded) | exit 0. Catalogue, stock and order lines identical to development by natural keys and business columns (768 rows: types, attributes, brands, products, variants, images, stock, order lines). Raw hashes differ only because `uuidv7()` ids and timestamps are generated per database |
+| `prisma migrate deploy`                                    | `Applying migration 20261110093000_catalogue_integrity`, exit 0                                                                                                                                                                                                                       |
+| After apply                                                | 47 CHECK (+11), 55 FK (one replaced), 137 indexes (+3); schema diff shows exactly the planned objects; data unchanged (768 rows identical); `version = 0` on all 40 products; `migrate status` up to date; `migrate diff … --exit-code` 0 (no drift); no `NOT VALID` constraints      |
+| Rollback (`psql -1 -v ON_ERROR_STOP=1`)                    | exit 0. Schema snapshot **identical** to the baseline (1,036 lines), data identical, counts 36/55/134, `migrate diff` against the committed `schema.prisma` exit 0, migration shown as pending                                                                                        |
+| Re-apply                                                   | exit 0; schema identical to the first application; drift exit 0                                                                                                                                                                                                                       |
+| Seed on the migrated database (new Prisma client)          | exit 0; data still identical to development; 0 violations of the new rules                                                                                                                                                                                                            |
+
+### Tests (Node v26.13.0, 2026-11-10 09:36–09:38 UTC)
+
+| Command                                                               | Result                                    |
+| --------------------------------------------------------------------- | ----------------------------------------- |
+| `format:check`, `lint`, `typecheck`, `prisma format --check`, `build` | all exit 0                                |
+| `npm test`                                                            | 179 / 179                                 |
+| `npm run test:integration`                                            | **109 / 109** (+26 catalogue constraints) |
+| `npm run test:http` (production build)                                | 40 / 40                                   |
+| `npm run test:e2e` (production build)                                 | 40 / 40                                   |
+
+The 26 new tests cover: migration, indexes and composite FK present; version 0 and negative refused;
+archived status/timestamp agreement; five bad product slugs and a bad brand slug; four bad type codes and a
+bad attribute code; allowed-values rules (missing, empty, non-array, on TEXT; valid MULTI_ENUM and TEXT
+accepted); variant options must be ENUM; five bad SKUs and a 64-character SKU accepted; negative image
+position and blank alt text refused; product-level and own-variant images accepted; another product's
+variant refused; a variant with images can be neither deleted nor moved.
+
+### Development database (not touched)
+
+- Fingerprint `3a6b72f9d53ed06b19f3f136d24b84a6` at 09:37 UTC, per-table output identical to the start of
+  the session; still 2 migrations, 36 CHECK, no `products.version` column.
+- `prisma migrate status` on development (read-only) now reports `20261110093000_catalogue_integrity` as
+  not yet applied. Applying it needs the owner's separate approval. No runtime code reads catalogue
+  tables yet, so the development server is unaffected meanwhile; the seed must not be run against
+  development until the migration is applied there.
+
+### Owner requirements recorded for the Wave 3 services (TD-016)
+
+The last active variant of an ACTIVE product cannot be archived until the product is DRAFT; archiving
+never deletes, edits or releases stock or reservations and leaves order snapshots, carts, movements,
+reviews and collection links intact; image deletion keeps id, product, variant, URL, alt text and position
+in the audit row. Each gets service-level tests when the services are built. The order-item composite
+key (L22) and the weight and dimension snapshot (L23) are mandatory in Wave 8.
+
+## Wave 3 step 2: catalogue integrity migration on the development database (2026-11-10, done)
+
+Owner-approved with safeguards. Not done, by instruction: no seed against development, no `db:reset`, no
+truncation, no business-data change, no other migration, no commit or push, no Wave 3 service code.
+Evidence files (outside the repository): `~/ecommerce-backups/20261110-catalogue-integrity/`.
+
+| Safeguard                                   | Result                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Read-only pre-checks (read-only session) | 0 violations of each of the 11 new rules (including images pointing at another product's variant); no `version` column yet; none of the 3 indexes existed; 0 other sessions on `ecommerce`; no app server running                                                                                                                                                                                                                       |
+| 2. Baseline (11:08 UTC)                     | fingerprint `3a6b72f9d53ed06b19f3f136d24b84a6`, 46 tables, 1,626 rows; per-table baseline with `version` excluded; schema snapshot (1,036 objects); 768 natural-key rows; migration rows                                                                                                                                                                                                                                                |
+| 3. Backup                                   | `pg_dump` 18.6, custom format: `ecommerce-dev-before-catalogue-integrity.dump` (193,445 bytes, mode 600, sha256 `5bfa8613e64ee935b58fde843e904f6fcfa02340f3bf04ba51d4b657f22ce8d6`). `pg_restore --list`: 46 TABLE DATA entries. **Restore verified:** restored into a throwaway database `ecommerce_restore_check`, whose fingerprint was `3a6b72f9…` (all 46 tables and the 1,036-object schema identical), then dropped              |
+| 4. Pending migrations                       | exactly one: `20261110093000_catalogue_integrity`; file sha256 `607a8a95…` equals the checksum recorded on `ecommerce_test`                                                                                                                                                                                                                                                                                                             |
+| 5. Apply                                    | `npm run db:deploy` (`prisma migrate deploy`) on `ecommerce`, 11:08:46–11:08:47 UTC, exit 0                                                                                                                                                                                                                                                                                                                                             |
+| 6–7. Not run                                | seed, `db:reset`, truncation, data edits, other migrations                                                                                                                                                                                                                                                                                                                                                                              |
+| 8. Status and drift                         | `migrate status`: up to date (3 migrations); `migrate diff --exit-code`: 0; 0 unvalidated constraints; no migration logs or rollbacks                                                                                                                                                                                                                                                                                                   |
+| 9. Table-by-table comparison                | raw fingerprint now `04adce0841b9013d69f13b043ae4a245`: only `_prisma_migrations` (2 → 3 rows) and `products` (row text now includes `version`) differ. With `version` excluded, 45 of 46 tables are identical and only `_prisma_migrations` differs; its two earlier rows are unchanged. `version = 0` on all 40 products; no `updated_at` changed. The schema change is line-for-line identical to the one tested on `ecommerce_test` |
+| 10. Dependent data                          | identical: stock levels (on hand 4,677, reserved 10), movements (405), orders (20), order lines and snapshots (32; 1 on an archived variant), carts and cart lines, reviews (4), collection links (9), search outbox, audit logs, sessions, all catalogue tables; 768 natural-key rows identical                                                                                                                                        |
+| 11. Stop conditions                         | none hit                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+**New development fingerprint baseline:** `04adce0841b9013d69f13b043ae4a245` (from now on). The seed can be
+run against development again, but only with the owner's approval.

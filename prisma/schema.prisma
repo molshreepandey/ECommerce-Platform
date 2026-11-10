@@ -371,6 +371,8 @@ model Product {
   attributes         Json          @default("{}")
   taxRateBasisPoints Int           @map("tax_rate_basis_points")
   metadata           Json          @default("{}")
+  // Optimistic-locking counter for admin edits (TD-016); not a timestamp.
+  version            Int           @default(0)
   archivedAt         DateTime?     @map("archived_at") @db.Timestamptz(6)
   createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -391,6 +393,7 @@ model Product {
   @@index([productTypeId])
   @@index([productGroupId])
   @@index([taggingStatus, createdAt(sort: Desc)])
+  @@index([name, id])
   @@index([name(ops: raw("gin_trgm_ops"))], map: "products_name_trigram_idx", type: Gin)
   @@index([attributes(ops: JsonbPathOps)], map: "products_attributes_path_idx", type: Gin)
   @@map("products")
@@ -421,6 +424,9 @@ model ProductVariant {
   exchangeReturnItems ReturnRequestItem[]
 
   @@unique([productId, optionSignature])
+  // Target of composite foreign keys that require a variant to belong to the same product.
+  @@unique([productId, id])
+  @@index([optionValues(ops: JsonbPathOps)], map: "product_variants_option_values_path_idx", type: Gin)
   @@map("product_variants")
 }
 
@@ -429,13 +435,14 @@ model ProductMedia {
   productId String   @map("product_id") @db.Uuid
   variantId String?  @map("variant_id") @db.Uuid
   url       String
-  altText   String   @default("") @map("alt_text")
+  altText   String   @map("alt_text")
   position  Int      @default(0)
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   product Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
-  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  // A variant image must belong to a variant of the same product (unchecked when variantId is null).
+  variant ProductVariant? @relation(fields: [productId, variantId], references: [productId, id], onDelete: Restrict, onUpdate: Restrict)
 
   @@index([productId, position])
   @@index([variantId])

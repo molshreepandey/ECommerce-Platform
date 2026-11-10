@@ -28,10 +28,9 @@ describe('identity constraints migration (20261107150000_identity_constraints)',
       .parse(
         await database.$queryRaw`SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL ORDER BY migration_name`,
       );
-    expect(migrations.map(({ migration_name }) => migration_name)).toEqual([
-      '20261107000000_init',
-      '20261107150000_identity_constraints',
-    ]);
+    expect(migrations.map(({ migration_name }) => migration_name)).toEqual(
+      expect.arrayContaining(['20261107000000_init', '20261107150000_identity_constraints']),
+    );
     const indexes = z
       .array(z.object({ indexdef: z.string() }))
       .parse(

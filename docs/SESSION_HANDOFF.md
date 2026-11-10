@@ -3,6 +3,21 @@
 Updated 2026-11-10 and committed with Wave 2B. Resume from exactly this state. Do **not** recreate the
 project, reset any database, commit, push or start Wave 3 without the owner's explicit approval.
 
+## Latest: Wave 3 steps 1 and 2 (2026-11-10, committed locally, not pushed)
+
+- Migration `20261110093000_catalogue_integrity` is tested on `ecommerce_test` (apply, exact rollback with
+  `prisma/rollbacks/…down.sql`, re-apply, no drift, full seed, 109 / 109 integration tests) and, with the
+  owner's approval, **applied to development** with `npm run db:deploy` (journal: "Wave 3 step 2").
+- **Development fingerprint is now `04adce0841b9013d69f13b043ae4a245`.** The old `3a6b72f9…` is the state
+  before the migration. The only differences are the `products.version` column (0 everywhere) and one
+  `_prisma_migrations` row; every other table is identical.
+- **Backup of development before the migration (restore-verified):**
+  `~/ecommerce-backups/20261110-catalogue-integrity/ecommerce-dev-before-catalogue-integrity.dump`
+  (sha256 `5bfa8613…`), with the baseline files next to it.
+- Committed locally as "Wave 3 steps 1-2: catalogue integrity migration (test and development)" (the
+  commit that contains this file), on top of Wave 2B `f2c40ab`. Not pushed; pushing needs approval.
+- Wave 3 services, APIs and pages are not started; they need the owner's approval.
+
 ## Where things stand
 
 - **Wave 2B is finished and verified, including final check 7** (client IP behind proxies; details in
@@ -101,11 +116,10 @@ After the regression only documentation changed (journal, traceability, testing 
 
 ## Databases and services
 
-- **Development database `ecommerce`:** fingerprint `3a6b72f9d53ed06b19f3f136d24b84a6` (46 tables, 1,626
-  rows), unchanged since Wave 2B Step B and identical before and after check 7.
+- **Development database `ecommerce`:** fingerprint `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627
+  rows) since the catalogue integrity migration on 2026-11-10.
+  - Before that migration: `3a6b72f9d53ed06b19f3f136d24b84a6` (unchanged from Wave 2B Step B until then).
   - Wave 2B baseline: `84956ffb57af5da58ba41b5ea154611d`.
-  - Intended changes only: `_prisma_migrations` +1 row, `password_hash` on 3 customers and 5 staff users,
-    4 CHECK constraints and 1 index.
 - **Test database `ecommerce_test`:** reset by `npm run start:test` and by the integration tests. Holds
   only test data.
 - **Redis:** 0 development keys (test rate-limit counters expire within a minute).
@@ -125,7 +139,7 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind = 'r'
 order by 1;
 SQL
-# expected: 3a6b72f9d53ed06b19f3f136d24b84a6
+# expected: 04adce0841b9013d69f13b043ae4a245
 ```
 
 If Docker is not running, this prints `d41d8cd98f00b204e9800998ecf8427e` (the md5 of empty input), which is
@@ -133,25 +147,26 @@ not a database result.
 
 ## Pending items
 
-| #   | Item                                                        | Status                              |
-| --- | ----------------------------------------------------------- | ----------------------------------- |
-| 1   | Final check 7 and the local Wave 2B commit                  | done, approved by the owner         |
-| 2   | Push to GitHub                                              | not approved                        |
-| 3   | Wave 3 pre-implementation database confirmation (read-only) | to prepare, then wait for the owner |
-| 4   | Wave 3 implementation                                       | not approved                        |
+| #   | Item                                                 | Status                     |
+| --- | ---------------------------------------------------- | -------------------------- |
+| 1   | Wave 3 steps 1-2 (migration on test and development) | done and committed locally |
+| 2   | Apply the migration to the development database      | done (Wave 3 step 2)       |
+| 3   | Wave 3 services, APIs and pages                      | not approved yet           |
+| 4   | Push to GitHub                                       | not approved               |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
-not revoked on re-login. Outstanding limitations: L1–L21 in `docs/REQUIREMENTS_TRACEABILITY.md`.
+not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
+snapshot. Outstanding limitations: L1–L23 in `docs/REQUIREMENTS_TRACEABILITY.md`.
 Deployment requirement (not a finished production setting): staging and production keep
 `trustedProxyHopCount` at 0 until the real proxy topology is verified (TD-015, DEPLOYMENT_GUIDE).
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD is the Wave 2B commit; `git status --porcelain --untracked-files=all`
-   prints nothing; the fingerprint is `3a6b72f9…`; three healthy containers.
-2. Wait for the owner's instruction. Do not push and do not start Wave 3 without explicit approval.
-3. When asked, prepare the read-only Wave 3 database confirmation (relationships, foreign-key behaviour,
-   migration safety, compatibility with inventory, cart and orders).
+1. Check that nothing changed: HEAD is the Wave 3 steps 1-2 commit (parent `f2c40ab`); the working tree is
+   clean; the development fingerprint is `04adce08…`; both databases have 3 migrations; three healthy
+   containers.
+2. Wait for the owner's approval before starting the Wave 3 catalogue services. Do not push, seed
+   development, or reset or truncate any database without explicit approval.
 
 ## Rules still in force
 
