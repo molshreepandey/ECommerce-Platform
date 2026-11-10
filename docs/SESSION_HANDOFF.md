@@ -3,6 +3,16 @@
 Updated 2026-11-10 and committed with Wave 2B. Resume from exactly this state. Do **not** recreate the
 project, reset any database, commit, push or start Wave 3 without the owner's explicit approval.
 
+## Latest: Wave 3 step 3, catalogue services (2026-11-10, committed locally, not pushed)
+
+- Service layer for D9–D15 in `src/modules/catalogue/` (journal: "Wave 3 step 3"; decisions: TD-016
+  implementation notes). No HTTP routes or admin pages yet (L24).
+- Tests: 258 unit, 184 integration, 40 HTTP, 40 browser; format, lint, typecheck and build pass.
+- Development fingerprint still `04adce0841b9013d69f13b043ae4a245`; nothing written to development.
+- Committed locally as "Wave 3 step 3: catalogue services (types, attributes, brands, products,
+  variants, images, lifecycle)" (the commit containing this file). Not pushed.
+- Next (approved): admin route handlers, HTTP tests, admin pages and E2E. Not to be committed without review.
+
 ## Latest: Wave 3 steps 1 and 2 (2026-11-10, committed locally, not pushed)
 
 - Migration `20261110093000_catalogue_integrity` is tested on `ecommerce_test` (apply, exact rollback with

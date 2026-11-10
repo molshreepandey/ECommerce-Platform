@@ -370,3 +370,33 @@ Migration `20261110093000_catalogue_integrity` (additive). Reverse script:
   are simplest as "the update statement never includes the column" (rule 4). Service tests prove them.
 - **Kept for later waves:** see `docs/DATABASE_DESIGN.md`, "Integrity requirements for later waves"
   (the order-item composite key and the weight and dimension snapshot, both mandatory in Wave 8).
+
+### TD-016 implementation notes (Wave 3 services)
+
+- **Layers:** `src/modules/catalogue/` holds the pure rules (`attribute-validation.ts`, `product-lifecycle.ts`,
+  `variant-generation.ts`, `image-url.ts`, `product-list-query.ts`), repositories (queries only) and services
+  (transactions, locks, audit, outbox). Route handlers are not written yet (L24).
+- **RBAC twice:** handlers will call `requirePermission`; every service also calls `assertStaffPermission`
+  (`catalogue.read` for reads, `catalogue.write` for writes), so a handler that forgets cannot bypass it.
+- **Locks:** product row `FOR UPDATE` for every product, variant and image write (this serialises the
+  "ACTIVE needs an active variant" check with variant status changes); product type `FOR UPDATE` for
+  definition changes and `FOR SHARE` for product and variant validation; brand `FOR SHARE` when a product
+  uses it.
+- **The product version covers the whole product:** product edits and status changes need
+  `expectedVersion`; variant and image changes lock the product and increment its version, and return the
+  new value, so an editor holding an old version sees `STALE_PRODUCT`.
+- **Constraint errors, not pre-checks:** duplicate codes, slugs, SKUs and combinations, and an image whose
+  variant belongs to another product, are caught from the unique or foreign-key violation and mapped to
+  409 or 422 (plan rule 5).
+- **Audit data stays flat** (TD-014): attributes, option values and orders of ids are stored as JSON text.
+- **Paging:** newest and oldest pages use the `uuidv7` id alone. A cursor on `created_at` would lose
+  precision (JavaScript milliseconds against Postgres microseconds) and skip or repeat rows.
+- **Lock order and deadlocks (reviewed before the commit):** create product takes type `SHARE` → brand
+  `SHARE`; product edits and status changes take product `UPDATE` → brand and/or type `SHARE`; variant and
+  image writes take product `UPDATE` → type `SHARE`; definition changes take only type `UPDATE`; brand edits
+  take only brand `UPDATE`. Foreign-key checks add `KEY SHARE` locks, which never conflict with the
+  `NO KEY UPDATE` that status and price updates take. The only exclusive holders on types and brands never
+  wait for another lock afterwards, and shared locks do not block each other, so no wait cycle (deadlock) is
+  possible; product locks are always on one product per transaction.
+- **Errors arrive as rejected promises:** every service entry point is `async`, so a permission error is
+  never a synchronous throw.

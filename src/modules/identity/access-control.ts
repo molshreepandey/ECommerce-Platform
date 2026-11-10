@@ -83,6 +83,11 @@ export async function requirePermission(
   permissionCode: PermissionCode,
 ): Promise<StaffContext> {
   const staff = await requireStaff(request);
-  if (!staff.permissionCodes.has(permissionCode)) throw new PermissionDeniedError(permissionCode);
+  assertStaffPermission(staff, permissionCode);
   return staff;
+}
+
+// Services call this too, so a route handler that forgets requirePermission still cannot bypass RBAC.
+export function assertStaffPermission(staff: StaffContext, permissionCode: PermissionCode): void {
+  if (!staff.permissionCodes.has(permissionCode)) throw new PermissionDeniedError(permissionCode);
 }

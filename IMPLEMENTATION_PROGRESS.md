@@ -1510,3 +1510,83 @@ Evidence files (outside the repository): `~/ecommerce-backups/20261110-catalogue
 
 **New development fingerprint baseline:** `04adce0841b9013d69f13b043ae4a245` (from now on). The seed can be
 run against development again, but only with the owner's approval.
+
+## Wave 3 step 3: catalogue services (2026-11-10, done; awaiting owner review, not committed)
+
+Owner-approved scope: the catalogue service layer (sections 1–6). Not done, by instruction: no HTTP route
+handlers or admin pages yet (L24), no development seed, no development database writes, no commit or push,
+nothing from later waves (checkout, payment, orders, fulfilment). Mandatory Wave 8 items L22 and L23 are
+unchanged.
+
+### What was built
+
+| Section                                  | Files (`src/modules/catalogue/` unless noted)                                                                                                                                                                                                                                                                                |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared                                   | `catalogue.errors.ts`, `catalogue.schema.ts`, `catalogue-audit.ts`, `slug.ts`; `src/modules/search/search-outbox.repository.ts`; `assertStaffPermission` in `access-control.ts`; foreign-key helper in `src/lib/db.ts`; `BrandId`, `AttributeDefinitionId`, `ProductMediaId` in `src/lib/ids.ts`; 20 catalogue audit actions |
+| 1–2 Types, definitions, brands, products | `attribute-validation.ts`, `product-type.repository.ts`, `product-type.service.ts`, `brand.repository.ts`, `brand.service.ts`, `product.repository.ts`, `product.service.ts`, `product-list-query.ts`                                                                                                                        |
+| 3 Variants                               | `variant-generation.ts`, `variant.repository.ts`, `variant.service.ts`, `product-lifecycle.ts`                                                                                                                                                                                                                               |
+| 4 Images                                 | `image-url.ts`, `media.repository.ts`, `media.service.ts`                                                                                                                                                                                                                                                                    |
+| 5 Lifecycle                              | `changeProductStatus` in `product.service.ts`                                                                                                                                                                                                                                                                                |
+| 6 Integrity                              | cross-cutting tests (below)                                                                                                                                                                                                                                                                                                  |
+
+Decisions are in TD-016 ("implementation notes").
+
+### Problems found while building, all fixed
+
+1. **Synchronous throws.** Non-`async` service functions threw permission errors synchronously instead of
+   rejecting. Found by an integration test; every entry point is now `async`.
+2. **Paging precision.** The first keyset compared `created_at` from JavaScript (milliseconds) with
+   Postgres (microseconds), which can skip or repeat rows. Newest/oldest now page by the `uuidv7` id.
+3. **Wrong conflict codes.** Restoring a non-archived type and changing an archived definition first used a
+   status-transition error with invented states; they now have their own codes.
+4. Test mistakes of my own: a SKU-length boundary (60 + "-XXL" is exactly 64, which is valid), an error test
+   that called factories without arguments, and two lint findings (`import()` types, `expect.any`).
+
+### Tests (Node v26.13.0, 2026-11-10 12:07–12:09 UTC)
+
+| Command                                      | Result                                                                                        |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `format:check`, `lint`, `typecheck`, `build` | all exit 0                                                                                    |
+| `npm test`                                   | **258 / 258** (+79: validator, schemas, list query, slug, lifecycle, generator, image URLs)   |
+| `npm run test:integration`                   | **184 / 184** (+75: types 13, products 16, variants 17, images 10, lifecycle 9, integrity 10) |
+| `npm run test:http` (production build)       | 40 / 40                                                                                       |
+| `npm run test:e2e` (production build)        | 40 / 40                                                                                       |
+
+Owner requirements and their evidence:
+
+| Requirement                                                                                | Test                                                                                                                              |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Activating without an active variant → 422                                                 | `catalogue-lifecycle`: "fails with 422 while there is no active variant"                                                          |
+| Archiving the last active variant of an ACTIVE product → 409                               | `catalogue-variants`: "refuses to archive or deactivate the last active variant"                                                  |
+| Row locking keeps the invariant under concurrency                                          | `catalogue-lifecycle`: activation racing an archive (6 rounds); two concurrent archives (4 rounds) — exactly one wins each time   |
+| Optimistic locking                                                                         | `catalogue-products`: stale version 409; five concurrent updates from one version → one wins                                      |
+| Archival never touches stock, reservations, movements, orders, carts, reviews, collections | `catalogue-lifecycle`: all 8 tables byte-identical after variant archive, product archive and restore; reservation still 3 of 10  |
+| Images reference their own product's variants                                              | `catalogue-media`: another product's variant → 422 on add and update                                                              |
+| Complete image-deletion audit                                                              | `catalogue-media`: `before` = image id, product id, variant id, URL, alt text, position                                           |
+| Audit in the same transaction                                                              | `catalogue-integrity`: product rolled back when the outbox or audit write fails                                                   |
+| Deny-by-default RBAC                                                                       | `catalogue-integrity`: all 5 seeded roles (write only for SUPER_ADMIN and CATALOGUE_MANAGER); no permissions → 403 even for reads |
+| Predictable, non-leaking errors                                                            | `catalogue-integrity`: every catalogue error envelope free of SQL and constraint names                                            |
+
+Not proven: the concurrency tests show the locks hold, but no run was made with the locks removed to show
+the tests would then fail.
+
+### Databases
+
+Development fingerprint `04adce0841b9013d69f13b043ae4a245` before (12:07 UTC) and after (12:09 UTC) the
+regression; 0 development Redis keys. All test setup ran on `ecommerce_test` through the existing guards.
+
+### Pre-commit review (owner-approved commit, 2026-11-10 12:15 UTC)
+
+- **Permissions:** a scan of every exported service function found all 24 entry points calling
+  `assertStaffPermission` (6 × `catalogue.read`, 18 × `catalogue.write`); the 5 exports without it are
+  helpers that need a caller's transaction client.
+- **Atomicity:** no `getDatabase()` inside any `$transaction` block, no catalogue write outside one, and
+  all 23 audit and outbox calls receive the transaction client.
+- **Locks:** lock order traced for every operation (TD-016 notes); no wait cycle is possible.
+- **Fixed in the review:** a SKU clash found by the generator returned `details: { sku: "" }` (the
+  constraint error does not carry the SKU); it now returns no details, and a test asserts `details: null`.
+- **Hygiene:** no secrets, home paths, debug output, focused or skipped tests, or files outside the module,
+  search outbox, integration tests, four shared libs and docs. The one credential-like string added is the
+  negative test `https://user:secret@picsum.photos/x.jpg`, which must be refused.
+- **Checks (Node v26.13.0):** `git diff --check`, format, lint, typecheck, build all pass; unit 258 / 258;
+  integration 184 / 184 (re-run because of the fix). Development fingerprint `04adce08…` before and after.

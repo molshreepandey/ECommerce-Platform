@@ -45,3 +45,12 @@ export function uniqueViolationConstraintName(
   const parsed = uniqueViolationMetaSchema.safeParse(error.meta);
   return parsed.success ? parsed.data.driverAdapterError.cause.constraint.index : null;
 }
+
+export function isForeignKeyViolation(
+  error: unknown,
+): error is Prisma.PrismaClientKnownRequestError {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003';
+}
+
+// Measured with @prisma/adapter-pg 7.10: foreign-key errors carry the constraint name in the same place.
+export const foreignKeyViolationConstraintName = uniqueViolationConstraintName;
