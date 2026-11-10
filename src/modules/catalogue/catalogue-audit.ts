@@ -1,5 +1,5 @@
 import type { DatabaseClient } from '@/lib/db';
-import { recordAuditEvent } from '@/modules/audit/audit.service';
+import { recordAuditEvent, recordAuditEvents } from '@/modules/audit/audit.service';
 import type { AuditAction, AuditData } from '@/modules/audit/audit.types';
 import type { RequestMetadata, StaffContext } from '@/modules/identity/access-control';
 
@@ -14,7 +14,9 @@ export type CatalogueEntityType =
   | 'brand'
   | 'product'
   | 'product_variant'
-  | 'product_media';
+  | 'product_media'
+  | 'category'
+  | 'product_group';
 
 // Audit data is flat (TD-014): structured values such as attributes are stored as JSON text.
 export function jsonText(value: unknown): string {
@@ -43,4 +45,27 @@ export function recordCatalogueEvent(
     ipAddress: actor.metadata.clientIp,
     requestId: actor.metadata.requestId,
   });
+}
+
+type CatalogueEvent = Parameters<typeof recordCatalogueEvent>[2];
+
+export function recordCatalogueEvents(
+  database: DatabaseClient,
+  actor: CatalogueActor,
+  events: readonly CatalogueEvent[],
+): Promise<void> {
+  return recordAuditEvents(
+    database,
+    events.map((event) => ({
+      actorType: 'STAFF' as const,
+      actorId: actor.staff.staffUserId,
+      action: event.action,
+      entityType: event.entityType,
+      entityId: event.entityId,
+      ...(event.before === undefined ? {} : { before: event.before }),
+      ...(event.after === undefined ? {} : { after: event.after }),
+      ipAddress: actor.metadata.clientIp,
+      requestId: actor.metadata.requestId,
+    })),
+  );
 }

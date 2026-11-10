@@ -80,6 +80,14 @@ consecutive runs.
 - Radix Toast briefly duplicates each toast's text in a screen-reader announcement; match toasts inside the
   "Notifications" region. The dev-server smoke run exposed this; the faster production build had hidden it.
 
+- The hidden copy also appears after `page.reload()`; use `visibleField()` for any labelled input, including
+  per-row inputs such as a group's swatch labels (Wave 4). Form landmarks (`role="search"`) are named
+  differently from the fields inside them, so a label never matches both.
+- Permission tests try every write route or service, not one example, and check that nothing changed
+  (rows, audit and outbox); Wave 4 also proved one such test fails when a service check is removed.
+- Stop the test server before `npm run test:integration`: integration truncates `ecommerce_test`, which the
+  test server also uses.
+
 ## Known limitations
 
 - (Wave 2A) One run of the browser tests against `next dev` timed out in a reload loop (2026-11-07). At

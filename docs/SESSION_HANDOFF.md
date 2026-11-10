@@ -1,7 +1,21 @@
 # Session handoff
 
-Updated 2026-11-10 and committed with Wave 2B. Resume from exactly this state. Do **not** recreate the
-project, reset any database, commit, push or start Wave 3 without the owner's explicit approval.
+Updated 2026-11-10 and committed with Wave 4. Resume from exactly this state. Do **not** recreate the
+project, reset any database, commit, push or start Wave 5 without the owner's explicit approval.
+
+## Latest: Wave 4, category tree, tagging and product groups (2026-11-10, committed locally, not pushed)
+
+- Committed locally as "Wave 4: category tree, tagging and product groups" (the commit containing this
+  file), on top of `800dd41`: 13 modified and 38 new code and test files, plus these docs (journal: "Wave
+  4"; decisions: TD-017; API: `docs/API_DOCUMENTATION.md`; walkthrough: `docs/walkthroughs/wave-4.md`;
+  limitations L30–L34). Not pushed.
+- **L31 is mandatory before Wave 8 order implementation:** decide and add category / group snapshots on
+  order lines (or an explicit "current category" rule). L29 (browser access-denied test) remains open.
+- No migration: the existing `categories` and `product_groups` schema fits.
+- Tests: 270 unit, 215 integration, 56 HTTP, 52 browser; format, lint, typecheck and build pass.
+- Development fingerprint still `04adce0841b9013d69f13b043ae4a245`; 0 development Redis keys; test servers
+  stopped.
+- Next: owner review of Wave 4. Commit only with approval (no AI attribution); Wave 5 needs approval.
 
 ## Latest: Wave 3 step 4, catalogue admin API and UI (2026-11-10, committed locally, not pushed)
 
@@ -175,7 +189,7 @@ not a database result.
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
-snapshot. Outstanding limitations: L1–L23 in `docs/REQUIREMENTS_TRACEABILITY.md`.
+snapshot, L31 category and group snapshot decision (before order implementation). Outstanding limitations: L1–L23 in `docs/REQUIREMENTS_TRACEABILITY.md`.
 Deployment requirement (not a finished production setting): staging and production keep
 `trustedProxyHopCount` at 0 until the real proxy topology is verified (TD-015, DEPLOYMENT_GUIDE).
 

@@ -3,6 +3,8 @@ import { Suspense } from 'react';
 import { Card } from '@/components/atoms/Card';
 import { Flexbox } from '@/components/atoms/Flexbox';
 import { Heading } from '@/components/atoms/Heading';
+import { Link } from '@/components/atoms/Link';
+import { Text } from '@/components/atoms/Text';
 import { MediaManager, ProductEditor, VariantManager } from '@/components/organisms/CatalogueAdmin';
 import { listBrands } from '@/modules/catalogue/brand.service';
 import { getProduct } from '@/modules/catalogue/product.service';
@@ -45,6 +47,26 @@ async function ProductWorkspace({
       <Heading level={2} variant="heading3">
         {product.name}
       </Heading>
+      <Text variant="body3" tone="muted">
+        Category:{' '}
+        {product.category === null ? (
+          <Link href="/tagging" variant="body3">
+            not tagged yet
+          </Link>
+        ) : (
+          <Link href="/categories" variant="body3">
+            {product.category.name}
+          </Link>
+        )}{' '}
+        · Group:{' '}
+        {product.productGroup === null ? (
+          'none'
+        ) : (
+          <Link href={`/product-groups/${product.productGroup.id}`} variant="body3">
+            {product.productGroup.name}
+          </Link>
+        )}
+      </Text>
       <ProductEditor
         product={product}
         productAttributes={activeDefinitions.filter(({ scope }) => scope === 'PRODUCT')}

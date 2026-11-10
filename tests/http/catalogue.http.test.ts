@@ -5,98 +5,25 @@ import { z } from 'zod';
 
 import { demoPassword } from '../../prisma/seed/demo-credentials';
 import { callApi, sessionCookieFrom } from './app-server';
+import {
+  catalogueApi,
+  errorCode,
+  errorEnvelope,
+  idSchema,
+  staffCookie,
+} from './support/catalogue-api';
 
 const runId = `${Date.now().toString(36)}${randomInt(1_000_000).toString(36)}`;
 const unknownId = '0195f2a0-0000-7000-8000-000000000999';
 
-const errorEnvelope = z.strictObject({
-  error: z.strictObject({ code: z.string(), message: z.string(), details: z.unknown() }),
-});
-
-function errorCode(body: unknown): string {
-  return errorEnvelope.parse(body).error.code;
-}
-
-async function staffCookie(email: string): Promise<string> {
-  const response = await callApi('post', 'admin', '/api/admin/auth/login', {
-    body: { email, password: demoPassword },
-  });
-  expect(response.status).toBe(200);
-  return sessionCookieFrom(response.headers['set-cookie'], 'admin_session');
-}
-
 let manager = '';
 let support = '';
+const { createProduct } = catalogueApi(() => manager);
 
 beforeAll(async () => {
   manager = await staffCookie('catalogue.manager@demo-store.test');
   support = await staffCookie('support@demo-store.test');
 });
-
-const idSchema = z.object({ id: z.uuid() });
-
-async function createType(code: string): Promise<string> {
-  const created = await callApi('post', 'admin', '/api/admin/product-types', {
-    cookie: manager,
-    body: { code, name: `Type ${code}` },
-  });
-  expect(created.status).toBe(201);
-  const productTypeId = z.object({ productType: idSchema }).parse(created.body).productType.id;
-  for (const definition of [
-    {
-      code: 'fabric',
-      label: 'Fabric',
-      dataType: 'ENUM',
-      scope: 'PRODUCT',
-      isRequired: true,
-      allowedValues: ['Cotton', 'Silk'],
-    },
-    {
-      code: 'size',
-      label: 'Size',
-      dataType: 'ENUM',
-      scope: 'VARIANT_OPTION',
-      isRequired: true,
-      allowedValues: ['S', 'M', 'L'],
-    },
-  ]) {
-    const response = await callApi(
-      'post',
-      'admin',
-      `/api/admin/product-types/${productTypeId}/attribute-definitions`,
-      { cookie: manager, body: definition },
-    );
-    expect(response.status).toBe(201);
-  }
-  return productTypeId;
-}
-
-async function createBrand(slug: string): Promise<string> {
-  const response = await callApi('post', 'admin', '/api/admin/brands', {
-    cookie: manager,
-    body: { name: `Brand ${slug}`, slug },
-  });
-  expect(response.status).toBe(201);
-  return z.object({ brand: idSchema }).parse(response.body).brand.id;
-}
-
-async function createProduct(slug: string): Promise<string> {
-  const productTypeId = await createType(`type_${slug.replaceAll('-', '_')}`);
-  const brandId = await createBrand(`brand-${slug}`);
-  const response = await callApi('post', 'admin', '/api/admin/products', {
-    cookie: manager,
-    body: {
-      productTypeId,
-      brandId,
-      name: `Kurta ${slug}`,
-      slug,
-      attributes: { fabric: 'Cotton' },
-      taxRateBasisPoints: 500,
-    },
-  });
-  expect(response.status).toBe(201);
-  return z.object({ product: idSchema }).parse(response.body).product.id;
-}
 
 const measurements = {
   mrpPaise: 99_900,

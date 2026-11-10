@@ -1673,3 +1673,116 @@ keys. Test servers stopped.
   outside the catalogue API, admin pages, catalogue components, the shared client helpers, tests and docs.
 - **Checks (Node v26.13.0):** `git diff --check`, format, lint, typecheck, build pass; unit 258 / 258;
   integration 184 / 184; HTTP 51 / 51; browser 48 / 48. Development fingerprint `04adce08…` before and after.
+
+## Wave 4: category tree, tagging and product groups (2026-11-10, done; awaiting owner review, not committed)
+
+Owner-approved scope: category management and hierarchy, product groups and membership, assigning products
+to categories and groups, validation (depth, cycles, duplicate slugs, invalid relationships), safe archive
+and delete, search-outbox updates, RBAC, audit, transactional integrity, admin API, admin UI, HTTP and
+browser tests. Not done, by instruction: no pricing, tax, discount, checkout, payment or order work; no
+development seed, reset, truncate or data change; no commit or push. No schema change was needed: the
+existing `categories` (path, level 1–4 CHECK, unique slug) and `product_groups` tables already fit.
+
+### What was built
+
+| Area                             | Files                                                                                                                                                                                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Taxonomy module                  | `src/modules/taxonomy/`: `category-tree.ts` (pure: child paths, cycle and depth checks, subtree counts, name labels), schema, errors, `category.repository.ts`, `category.service.ts`, `tagging.repository.ts`, `tagging.service.ts`                             |
+| Grouping module                  | `src/modules/grouping/`: `group-rules.ts` (capacity 50, same-member-set check), schema, errors, `product-group.repository.ts`, `product-group.service.ts`                                                                                                        |
+| Shared additions                 | `lockProductsInIdOrder` and category/group fields in `product.repository.ts`; `enqueueProductsReindex` and `enqueueProductsInCategorySubtree` in the search outbox; `recordAuditEvents` / `recordCatalogueEvents` (several rows in one insert); 12 audit actions |
+| API (9 route files, 15 handlers) | `src/app/api/admin/{categories,tagging,product-groups}/**/route.ts`                                                                                                                                                                                              |
+| Pages (4)                        | `src/app/admin/{categories,tagging,product-groups,product-groups/[groupId]}/page.tsx`; category and group shown on the product page; 3 navigation entries (`catalogue.read`); 3 icons                                                                            |
+| Components                       | `src/components/organisms/TaxonomyAdmin/` (`CategoryTreeManager`, `TaggingQueue`, `ProductGroupManager`, `ProductGroupEditor`)                                                                                                                                   |
+| Tests                            | unit: `category-tree.test.ts` (10), `group-rules.test.ts` (2); integration: `taxonomy.test.ts` (19), `product-groups.test.ts` (12); HTTP: `taxonomy.http.test.ts` (5); browser: `e2e/taxonomy.spec.ts` (2 × desktop and 360 px); shared test helpers extracted   |
+
+Permissions: reads use `catalogue.read`; every write uses the new `taxonomy.write` (SUPER_ADMIN and
+CATALOGUE_MANAGER only), checked by `requirePermission` in the handler and again by the service.
+
+### Rules
+
+- **Tree:** at most 4 levels; moving a category under itself or a descendant → 409 `CATEGORY_MOVE_CYCLE`;
+  a move or create that would put any node below level 4 → 422 `CATEGORY_TOO_DEEP`; slugs unique (409
+  `CATEGORY_SLUG_TAKEN`, from the unique constraint). Products sit only on leaves: a category with products
+  cannot get children (409 `CATEGORY_HAS_PRODUCTS`) and tagging to a non-leaf → 422 `CATEGORY_NOT_LEAF`.
+- **Move and slug rename** rewrite the whole subtree's path and level in one `UPDATE`, and queue every
+  product in the subtree for re-indexing in the same transaction.
+- **Deactivate** cascades to the subtree; a child cannot be activated under an inactive parent (422). Tagging
+  to an inactive category → 422. Products keep their category when it is deactivated.
+- **Delete** only an empty leaf: children → 409 `CATEGORY_HAS_CHILDREN`; any product, archived included →
+  409 `CATEGORY_HAS_PRODUCTS` (also mapped from the foreign-key error if a race slips past the count).
+  Orders, carts, reviews and collections never reference categories, so they cannot be affected.
+- **Tagging** is all-or-nothing for up to 100 products: unknown ids → 422 `PRODUCTS_NOT_FOUND`, archived →
+  409 `PRODUCTS_ARCHIVED`, nothing changes. Only products whose category really changes get a version bump,
+  an audit row and an outbox row.
+- **Groups:** up to 50 members (422 `GROUP_FULL`); a product in another group → 409
+  `PRODUCT_IN_ANOTHER_GROUP`; archived products cannot be added but can be removed; reorder and swatch
+  labels need the exact current member set (409 `STALE_GROUP_MEMBERS`); deleting a group only ungroups its
+  members (the audit row keeps the member list).
+
+### Concurrency
+
+Category writes take one transaction-scoped advisory lock for the tree, then row locks; tagging takes
+`FOR SHARE` on the target leaf, so it serialises with child creation, moves and deletes of that leaf.
+Every multi-product change (tagging, group add, remove, reorder, delete) locks the products in id order;
+group changes lock the group row first. Integration tests race opposite moves (5 rounds, never a cycle),
+tagging against child creation, overlapping bulk tags, two concurrent adds against the 50 cap, two groups
+claiming one product, and group changes overlapping tagging (no deadlock).
+
+### Permission tests
+
+Support staff and a catalogue writer without `taxonomy.write` are refused (403) on all 12
+write services (6 taxonomy, 6 grouping); the categories, groups, products, audit rows and outbox rows are
+unchanged afterwards. Removing one service's permission check makes that test fail (checked, then restored).
+
+### Problems found while building, all fixed
+
+1. **Slugs in the Move dialog.** Parent choices read `western-mwapt0bsm`; both the Move dialog and the
+   tagging page now use one `categoryNameLabels` ("Ethnic › Kurtas"), which stops at a missing parent and
+   after four levels so bad data cannot loop (unit tests for root, nested, missing parent and cycle).
+2. **Two form landmarks named like their own field** ("Find products to add", "Search groups"), which
+   screen readers announce twice; the forms are now "Product search" and "Group search".
+3. **Hidden duplicate inputs after reload** (Next 16 `<Activity>`): the swatch-label assertions now use
+   `visibleField`, as the rest of the suite does; the assertion is unchanged.
+4. A TypeScript error in the browser test (possibly-undefined array items under
+   `noUncheckedIndexedAccess`), fixed by building each name directly, with no casts.
+5. Earlier in the wave: a depth-test arithmetic mistake, a tree wrapped in `<nav>` (now a labelled
+   `<section>`), JSX inside `try/catch`, unused destructured values in the audit sanitiser.
+6. The machine slept mid-wave; a stale test server from before the sleep (on the test database) was found
+   and stopped before rebuilding.
+7. **Permission tests covered only "create".** The services already checked `taxonomy.write` on every write,
+   but only creation was tested; the integration and HTTP tests now try every write (see above).
+
+### Tests (Node v26.13.0, 2026-11-10 14:35–14:50 UTC)
+
+| Command                                      | Result                                             |
+| -------------------------------------------- | -------------------------------------------------- |
+| `format:check`, `lint`, `typecheck`, `build` | all exit 0                                         |
+| `npm test`                                   | **270 / 270** (+12)                                |
+| `npm run test:integration`                   | **215 / 215** (+31)                                |
+| `npm run test:http` (production build)       | **56 / 56** (+5)                                   |
+| `npm run test:e2e` (production build)        | **52 / 52** (+4); the taxonomy spec also ran alone |
+
+HTTP coverage: 401 without a session; 403 `PERMISSION_DENIED` for support and inventory staff on all 12
+write handlers (reads allowed); 403 cross-site delete; 400 for bad ids and unknown fields; depth 422, cycle 409, non-leaf tagging 422, delete
+refused with children or products and allowed on an empty leaf; a group add → reorder with swatches →
+stale order 409 → second group 409 → remove → delete workflow; two groups claiming one product at once give
+exactly one 200 and one 409.
+
+Browser coverage (desktop and 360 px, no page errors, no CSP violations, no horizontal overflow): a catalogue
+manager builds a tree, moves a subcategory (readable names in the dialog), tags two products to a leaf from
+the queue (the non-leaf is not offered), sees no delete or add-child on a category with products, groups the
+products, reorders them with swatch labels that survive a reload, and removes one; support staff see the
+tree, queue and group with no write controls.
+
+### Limitations recorded (traceability)
+
+L30 audit UI deferred to Wave 10; L31 category and group snapshots on order lines **must be decided and
+addressed before Wave 8 order implementation**; L32 unknown product-group page returns HTTP 200; L33 no
+category reorder UI; L34 no database CHECK on category slug format; L29 (browser access-denied test) remains
+open.
+
+### Databases
+
+Development fingerprint `04adce0841b9013d69f13b043ae4a245` (46 tables) after all tests, unchanged; 0
+development Redis keys. Destructive tests used only `ecommerce_test`. Test servers stopped; ports 3000, 3100
+and 3200 free.

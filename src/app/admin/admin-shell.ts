@@ -15,6 +15,19 @@ export const adminNavigationEntries: readonly AdminNavigationEntry[] = [
     requiredPermission: 'catalogue.read',
   },
   { label: 'Brands', href: '/brands', icon: 'tag', requiredPermission: 'catalogue.read' },
+  {
+    label: 'Categories',
+    href: '/categories',
+    icon: 'folder-tree',
+    requiredPermission: 'catalogue.read',
+  },
+  { label: 'Tagging', href: '/tagging', icon: 'list-checks', requiredPermission: 'catalogue.read' },
+  {
+    label: 'Product groups',
+    href: '/product-groups',
+    icon: 'boxes',
+    requiredPermission: 'catalogue.read',
+  },
 ];
 
 // Signed-out pages (not-found) show the entries every staff member can see.

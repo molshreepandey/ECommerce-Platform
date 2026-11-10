@@ -400,3 +400,39 @@ Migration `20261110093000_catalogue_integrity` (additive). Reverse script:
   possible; product locks are always on one product per transaction.
 - **Errors arrive as rejected promises:** every service entry point is `async`, so a permission error is
   never a synchronous throw.
+
+## TD-017 Category tree, tagging and product groups (Wave 4)
+
+- **No schema change.** The existing `categories` table (slug path such as `/ethnic/kurtas/`, `level` with a
+  1–4 CHECK, unique slug, `ON DELETE RESTRICT` from products and children) and `product_groups` (member
+  count, `products.product_group_id`, `group_display_order`, `group_swatch_label`) already carry every rule.
+- **Materialised path.** A subtree is every row whose path starts with the node's path, so cycle checks,
+  subtree counts and re-index lists are prefix queries. A move or slug change rewrites the subtree's path,
+  level and slug in one `UPDATE`. Paths are slugs; labels shown to people are built from names
+  (`categoryNameLabels`), never from the path.
+- **Products only on leaves.** Tagging targets must be active leaves, and a category with products cannot
+  receive children, so a product is never "inside" a branch category.
+- **Separate permission.** `taxonomy.write` (SUPER_ADMIN, CATALOGUE_MANAGER) guards every write; reads use
+  `catalogue.read`. Handlers and services both check it.
+- **Serialising tree changes.** Every category write takes a transaction-scoped advisory lock (one key for
+  the whole tree) and then row locks (`FOR UPDATE`). The tree is small and admin writes are rare, so one
+  lock is simpler and safer than reasoning about every pair of concurrent moves (opposite moves could
+  otherwise each pass the cycle check). Tagging takes `FOR SHARE` on its target leaf, which conflicts with
+  child creation, moves, status changes and deletes of that leaf, but not with other tagging.
+- **Lock order (no deadlocks).** Category writes: tree lock → category rows; they never lock products (the
+  outbox insert reads products without locking them). Tagging: target category `SHARE` → products in id
+  order. Group changes: group row `UPDATE` → products in id order. Products are always locked in ascending
+  id order (`lockProductsInIdOrder`), so overlapping bulk changes cannot wait on each other in a cycle;
+  tested with overlapping tags and group changes running against tagging.
+- **Version and outbox.** Tagging and membership changes increase each changed product's `version` (an
+  editor holding an old version sees `STALE_PRODUCT`) and queue it for re-indexing; category renames, moves
+  and status changes queue every product in the subtree. Audit and outbox rows are written in the same
+  transaction.
+- **Safe delete.** Only an empty leaf (no children, no products including archived) can be deleted; the
+  foreign-key error is mapped to the same 409 if a race slips past the count. Deactivation cascades and
+  keeps product assignments. Deleting a group only ungroups its members; its audit row keeps the member
+  list. Orders, carts, reviews and collections do not reference categories or groups, so they are never
+  affected (tested by comparing those rows before and after).
+- **Prefix queries and slug characters.** Subtree queries use `path LIKE $path || '%'`. Category slugs
+  allow only `a-z`, `0-9` and `-` (API schema and `slugFromName`), so `_` and `%` never reach a path; the
+  table has no database CHECK on the format yet (L34).

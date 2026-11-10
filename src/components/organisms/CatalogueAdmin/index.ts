@@ -11,3 +11,4 @@ export { type EditableProduct, ProductEditor } from './ProductEditor';
 export { ProductFilters } from './ProductFilters';
 export { ProductTypeManager, type ProductTypeListItem } from './ProductTypeManager';
 export { VariantManager, type VariantItem, type VariantOptionDefinition } from './VariantManager';
+export { ActionFailure, useCatalogueAction } from './catalogue-actions';

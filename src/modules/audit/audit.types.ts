@@ -30,6 +30,18 @@ export const auditActions = [
   'catalogue.media_updated',
   'catalogue.media_reordered',
   'catalogue.media_deleted',
+  'taxonomy.category_created',
+  'taxonomy.category_updated',
+  'taxonomy.category_moved',
+  'taxonomy.category_status_changed',
+  'taxonomy.category_deleted',
+  'taxonomy.product_tagged',
+  'grouping.group_created',
+  'grouping.group_renamed',
+  'grouping.group_deleted',
+  'grouping.members_added',
+  'grouping.member_removed',
+  'grouping.members_reordered',
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];

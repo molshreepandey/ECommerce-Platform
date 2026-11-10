@@ -27,7 +27,8 @@ export function staffWith(permissionCodes: readonly PermissionCode[]): StaffCont
   };
 }
 
-export const catalogueManager = staffWith(['catalogue.read', 'catalogue.write']);
+export const catalogueManager = staffWith(['catalogue.read', 'catalogue.write', 'taxonomy.write']);
+export const catalogueWriterWithoutTaxonomy = staffWith(['catalogue.read', 'catalogue.write']);
 export const supportStaff = staffWith(['catalogue.read']);
 export const staffWithoutCatalogue = staffWith(['orders.read']);
 

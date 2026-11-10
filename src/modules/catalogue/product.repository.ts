@@ -57,6 +57,8 @@ const productDetailSelect = {
   ...productSummarySelect,
   productType: { select: { id: true, code: true, name: true } },
   brand: { select: { id: true, name: true, slug: true } },
+  category: { select: { id: true, name: true, path: true } },
+  productGroup: { select: { id: true, name: true } },
   variants: { select: variantSelect, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
   media: { select: mediaSelect, orderBy: { position: 'asc' } },
 } as const satisfies Prisma.ProductSelect;
@@ -113,6 +115,43 @@ export async function lockProduct(
         productTypeId: row.product_type_id,
         slug: row.slug,
       };
+}
+
+const bulkLockedRowsSchema = z.array(
+  z.object({
+    id: z.string(),
+    status: productStatusSchema,
+    category_id: z.string().nullable(),
+    product_group_id: z.string().nullable(),
+  }),
+);
+
+export interface BulkLockedProduct {
+  id: string;
+  status: ProductStatus;
+  categoryId: string | null;
+  productGroupId: string | null;
+}
+
+// Bulk changes (tagging, grouping) lock their products in id order, so two overlapping bulk changes
+// always take the locks in the same order and cannot deadlock. FOR UPDATE applies after ORDER BY.
+export async function lockProductsInIdOrder(
+  database: DatabaseClient,
+  productIds: readonly string[],
+): Promise<BulkLockedProduct[]> {
+  const ids = [...productIds];
+  const rows = bulkLockedRowsSchema.parse(
+    await database.$queryRaw`
+      SELECT id::text AS id, status::text AS status, category_id::text AS category_id,
+             product_group_id::text AS product_group_id
+      FROM products WHERE id = ANY(${ids}::uuid[]) ORDER BY id FOR UPDATE`,
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status,
+    categoryId: row.category_id,
+    productGroupId: row.product_group_id,
+  }));
 }
 
 export function insertProduct(
