@@ -53,6 +53,18 @@ export const appConfigSchema = z
       failureCooldownMilliseconds: positiveMilliseconds,
     }),
     health: z.strictObject({ probeTimeoutMilliseconds: positiveMilliseconds }),
+    authentication: z.strictObject({
+      customerSessionTtlDays: z.int().min(1).max(90),
+      staffSessionTtlHours: z.int().min(1).max(72),
+      secureCookies: z.boolean(),
+      trustedProxyHopCount: z.int().min(0).max(5),
+      demoAccountsAllowed: z.boolean(),
+      passwordHashing: z.strictObject({
+        memoryCostKib: z.int().min(19_456),
+        timeCost: z.int().min(2),
+        parallelism: z.int().min(1).max(8),
+      }),
+    }),
     rateLimits: z.strictObject({
       'customer-login': rateLimitPolicySchema,
       'customer-register': rateLimitPolicySchema,

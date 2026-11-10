@@ -2,10 +2,10 @@ import type { SeedClient } from './seed-client';
 import { daysFromSeedDay } from './seed-clock';
 import { deterministicUuidV7, requireValue } from './seed-ids';
 
-// Wave 2 replaces this with real bcrypt hashes of the demo password.
+// New demo accounts start with this; demo-passwords.seed.ts replaces it with an Argon2id hash.
 export const placeholderPasswordHash = 'SEED_PLACEHOLDER_PASSWORD_HASH_REPLACED_IN_WAVE_2';
 
-const permissionSeeds = [
+export const permissionSeeds = [
   { code: 'catalogue.read', description: 'View product types, attributes, brands and products' },
   {
     code: 'catalogue.write',
@@ -104,7 +104,7 @@ const roleDefinitions: readonly {
   },
 ];
 
-const staffUsers = [
+export const staffUsers = [
   { email: 'super.admin@demo-store.test', fullName: 'Sana Kapoor', roleCode: 'SUPER_ADMIN' },
   {
     email: 'catalogue.manager@demo-store.test',

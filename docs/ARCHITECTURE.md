@@ -1,6 +1,8 @@
 # Architecture
 
-Status: Wave 1 (foundation) and Wave 2A (platform) are built. Business modules start in Wave 2B.
+Status: Wave 1 (foundation), Wave 2A (platform) and Wave 2B (identity: accounts, sessions, roles,
+addresses, audit) are built. Business modules live in `src/modules/<name>/` as `*.service.ts` (transactions,
+rules) over `*.repository.ts` (Prisma only); route handlers in `src/app/api/` stay thin.
 
 ## Big picture
 

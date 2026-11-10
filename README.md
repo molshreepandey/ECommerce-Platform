@@ -46,6 +46,34 @@ Health check: `curl http://store.localhost:3000/api/health` returns 200 `ok` whe
 200 `degraded` when only a non-critical dependency (Elasticsearch or Redis) is down, and 503
 `unavailable` when PostgreSQL is down.
 
+## Demo accounts (development and demo only)
+
+`npm run db:seed` creates these accounts. **All of them use the password `DemoPass!2026`.** It exists only
+for local development, tests and the demo video, with two safeguards (TD-013):
+
+- **Seeding:** the seed runs only with `APP_ENV=development` or `APP_ENV=test`. It refuses `staging`,
+  `production` and anything else.
+- **Sign-in:** a server running with `APP_ENV=staging` or `production` refuses every `@demo-store.test`
+  email and the password `DemoPass!2026`, even if such accounts exist in its database.
+
+| Site  | Email                               | Role                             |
+| ----- | ----------------------------------- | -------------------------------- |
+| Admin | `super.admin@demo-store.test`       | Super admin (all 19 permissions) |
+| Admin | `catalogue.manager@demo-store.test` | Catalogue manager                |
+| Admin | `inventory.manager@demo-store.test` | Inventory manager                |
+| Admin | `order.ops@demo-store.test`         | Order operations                 |
+| Admin | `support@demo-store.test`           | Support (read-only)              |
+| Store | `asha.verma@demo-store.test`        | Customer, 2 saved addresses      |
+| Store | `rahul.mehta@demo-store.test`       | Customer, 2 saved addresses      |
+| Store | `neha.iyer@demo-store.test`         | Customer, 2 saved addresses      |
+
+Sign in at http://admin.localhost:3000/login or http://store.localhost:3000/login. New customers can also
+register at http://store.localhost:3000/register.
+
+A database seeded before Wave 2B has placeholder hashes; `npm run db:seed:demo-passwords` replaces them
+with Argon2id hashes of the demo password. It changes only `password_hash` on those 8 rows and does
+nothing on a second run.
+
 ## Configuration
 
 | Where                          | What                                                                                          | Committed |
@@ -67,13 +95,15 @@ can change settings with a restart instead of a rebuild. An invalid file stops t
 
 ## Tests
 
-| Command                    | What it runs                                                                          |
-| -------------------------- | ------------------------------------------------------------------------------------- |
-| `npm test`                 | unit tests (no server or database needed)                                             |
-| `npm run test:integration` | real PostgreSQL and Redis, **test database only** (name must end with `_test`)        |
-| `npm run start:test`       | starts the built app with the test configuration on port 3100 (after `npm run build`) |
-| `npm run test:http`        | HTTP tests against the test server                                                    |
-| `npm run test:e2e`         | Playwright browser tests (starts the test server if it is not running)                |
+| Command                    | What it runs                                                                                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`                 | unit tests (no server or database needed)                                                                                                      |
+| `npm run test:integration` | real PostgreSQL and Redis, **test database only** (name must end with `_test`)                                                                 |
+| `npm run start:test`       | resets the test database to the demo identity seed, then starts the built app with the test configuration on port 3100 (after `npm run build`) |
+| `npm run test:http`        | HTTP tests against the test server                                                                                                             |
+| `npm run test:e2e`         | Playwright browser tests (starts the test server if it is not running)                                                                         |
+| `npm run start:test:dev`   | like `start:test`, but runs the development server (`next dev`) on the test database, for safe smoke tests                                     |
+| `npm run test:http:dev`    | HTTP tests against `start:test:dev` (expects the dev-only `'unsafe-eval'` in the CSP)                                                          |
 
 A full local run: `npm test && npm run test:integration && npm run build && npm run test:e2e`, and
 `npm run test:http` while the test server is running.

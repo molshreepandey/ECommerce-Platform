@@ -4,6 +4,8 @@ import { getConfig } from '@/lib/config';
 import { decideHostRouting } from '@/lib/host-routing';
 import { REQUEST_ID_HEADER, SURFACE_HEADER } from '@/lib/request-headers';
 import { buildRuntimeSecurityHeaders } from '@/lib/security-headers';
+import { sessionCookieName } from '@/lib/session-cookie';
+import { signInRedirectPath } from '@/lib/sign-in-redirect';
 
 const safeRequestIdPattern = /^[A-Za-z0-9-]{8,64}$/;
 const unknownHostContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
@@ -59,6 +61,17 @@ export function proxy(request: NextRequest): NextResponse {
       NextResponse.next({ request: { headers: forwardedHeaders } }),
       securityHeaders,
     );
+  }
+
+  const redirectPath = signInRedirectPath({
+    surface: decision.surface,
+    pathname,
+    search: request.nextUrl.search,
+    hasSessionCookie: request.cookies.has(sessionCookieName(decision.surface)),
+  });
+  if (redirectPath !== null) {
+    const signInUrl = new URL(redirectPath, surfaces[decision.surface].publicOrigin);
+    return withHeaders(NextResponse.redirect(signInUrl, 307), securityHeaders);
   }
 
   const rewrittenUrl = request.nextUrl.clone();

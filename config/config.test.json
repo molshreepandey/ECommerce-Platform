@@ -34,15 +34,15 @@
   },
   "rateLimits": {
     "customer-login": {
-      "maxRequests": 3,
+      "maxRequests": 20,
       "windowSeconds": 60
     },
     "customer-register": {
-      "maxRequests": 3,
+      "maxRequests": 50,
       "windowSeconds": 60
     },
     "staff-login": {
-      "maxRequests": 3,
+      "maxRequests": 100,
       "windowSeconds": 60
     }
   },
@@ -53,6 +53,18 @@
       "connectSources": [],
       "scriptSources": [],
       "frameSources": []
+    }
+  },
+  "authentication": {
+    "customerSessionTtlDays": 30,
+    "staffSessionTtlHours": 12,
+    "secureCookies": false,
+    "trustedProxyHopCount": 0,
+    "demoAccountsAllowed": true,
+    "passwordHashing": {
+      "memoryCostKib": 19456,
+      "timeCost": 2,
+      "parallelism": 1
     }
   }
 }

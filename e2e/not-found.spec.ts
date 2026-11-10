@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { demoPassword, signInThroughForm } from './support/auth';
 import { adminOrigin, openSettledPage, storeOrigin } from './support/page-checks';
 
 test.describe('store not-found page', () => {
@@ -35,6 +36,13 @@ test.describe('store not-found page', () => {
 });
 
 test.describe('admin not-found page', () => {
+  // Admin pages need a session; sign in first so the 404 itself is what is being tested.
+  test.beforeEach(async ({ page }) => {
+    await page.goto(`${adminOrigin}/login`);
+    await signInThroughForm(page, 'support@demo-store.test', demoPassword);
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
+  });
+
   for (const pathname of ['/no-such-page', '/orders/missing-order', '/store']) {
     test(`renders the admin 404 for ${pathname}`, async ({ page }) => {
       const { status, uncaughtPageErrors, contentSecurityPolicyViolations } = await openSettledPage(
@@ -60,14 +68,17 @@ test.describe('admin not-found page', () => {
 
     await expect(page).toHaveURL(`${adminOrigin}/`);
     await expect(page).toHaveTitle('Admin');
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible();
   });
 });
 
-test('home pages still return 200 with no CSP violations or page errors', async ({ page }) => {
-  for (const origin of [storeOrigin, adminOrigin]) {
+test('the store home and admin sign-in pages return 200 with no CSP violations or page errors', async ({
+  page,
+}) => {
+  for (const url of [`${storeOrigin}/`, `${adminOrigin}/login`]) {
     const { status, uncaughtPageErrors, contentSecurityPolicyViolations } = await openSettledPage(
       page,
-      `${origin}/`,
+      url,
     );
     expect(status).toBe(200);
     expect(uncaughtPageErrors).toEqual([]);

@@ -146,14 +146,189 @@ limit. Details: `docs/redis-design.md` §1.1.
      carries Razorpay's signed requests. Close the tunnel and delete the dashboard webhook afterwards.
 - **Trade-offs:** real webhooks are verified manually (and recorded for the demo video), not in CI.
 
-## TD-009 Password hashing: Argon2id (approved for Wave 2B)
+## TD-009 Password hashing: Argon2id (benchmark gate passed, 2026-11-07)
 
-Argon2id via `@node-rs/argon2`, at or above OWASP's minimum (19 MiB memory, 2 iterations,
-parallelism 1), subject to compatibility and timing tests in Wave 2B. bcrypt (the plan's original choice)
-remains the fallback if those tests fail.
+- **Decision:** Argon2id through `@node-rs/argon2` **2.2.2** (pinned exactly), memory **19,456 KiB**, **2**
+  iterations, parallelism **1** (OWASP Password Storage Cheat Sheet minimum). Only the asynchronous `hash` and
+  `verify` functions are used. bcrypt (the plan's original choice) was the fallback if the gate failed; it
+  passed, so bcrypt is not used.
+- **Why:** OWASP lists Argon2id as the preferred algorithm (memory-hard, so GPU cracking is expensive) and
+  bcrypt as a legacy option with a 72-byte password limit.
+- **Gate (owner criterion: verify p95 ≤ 250 ms on the owner's Mac, at least 50 samples):** passed.
+
+  | Platform                                                                 | Native binding           | Verify p95          | Hash p95           | 10 concurrent logins, per-login p95 | Async event-loop gap p99 |
+  | ------------------------------------------------------------------------ | ------------------------ | ------------------- | ------------------ | ----------------------------------- | ------------------------ |
+  | macOS arm64 (Apple M2, 8 GiB, Low Power Mode on), 3 runs × 50            | `argon2-darwin-arm64`    | 8.7 / 17.8 / 8.7 ms | 8.8 / 9.7 / 9.1 ms | 40.3 / 41.1 / 39.4 ms               | 1.5–2.7 ms               |
+  | Linux arm64, native container `node:26.13.0`                             | `argon2-linux-arm64-gnu` | 11.8 ms             | 11.2 ms            | 48.5 ms                             | 5.4 ms                   |
+  | Linux x64, container `node:26.13.0` (`linux/amd64`, emulated by Rosetta) | `argon2-linux-x64-gnu`   | 23.4 ms             | 24.0 ms            | 80.0 ms                             | 3.8–4.5 ms               |
+  - Correctness on every platform: output `$argon2id$v=19$m=19456,t=2,p=1`; correct password verifies;
+    wrong, empty and off-by-one passwords are rejected; unique salts; Unicode and 128-character passwords work.
+  - No install scripts on any platform.
+  - Event loop: with async verify the main thread stayed responsive (p99 gap ≤ 2.7 ms on the Mac). The same
+    instrument measured a 44 ms freeze for five blocking `verifySync` calls, which validates the measurement.
+  - Memory: about +61 MiB peak during bursts of 10 concurrent logins (Node runs at most 4 hashes at a time
+    on its default worker pool).
+  - Linux x64 numbers come from emulation and only prove compatibility, not speed.
+
+- **Consequences:**
+  - Hashing shares Node's worker pool (`UV_THREADPOOL_SIZE`, default 4) with file and DNS work. Login bursts
+    are limited by the Wave 2A rate limiter; raise the pool size only if measurements show contention.
+  - Production images must install the package inside the image so the correct Linux binding (glibc or
+    musl) is chosen (Wave 15).
+- **Method notes:**
+  - The first event-loop measurement (`monitorEventLoopDelay`) could not detect a known 44 ms block, so it
+    was discarded and replaced by a 1 ms timer-gap measurement.
+  - "Worst p95 of three runs" is reported because individual samples were not kept.
 
 ## TD-010 Custom 404 pages with several root layouts
 
 `src/app/global-not-found.tsx` (behind `experimental.globalNotFound`) renders the store or admin 404
 based on the `x-surface` header set by the proxy. Per-surface catch-all routes were tried first and
 returned 200 or an empty shell; the full investigation is in `IMPLEMENTATION_PROGRESS.md`.
+
+## TD-011 Sessions: opaque tokens stored as hashes in PostgreSQL (Wave 2B)
+
+- **Decision:** a session is a row in `sessions`. The browser holds a random token (32 bytes from
+  `crypto.randomBytes`, base64url); the database stores only its SHA-256 (`token_hash`). Customer sessions
+  last 30 days, staff sessions 12 hours (`authentication.*` in the config file).
+- **Cookies:** `store_session` on the store host and `admin_session` on the admin host. Both are `HttpOnly`,
+  `SameSite=Lax`, `Path=/`, without `Domain`. In staging and production `secureCookies` is `true`, which
+  adds `Secure` and the `__Host-` name prefix (a config test enforces this).
+- **Why not JWT:** sign-out, sign-out everywhere, blocking a customer and deactivating staff must take effect
+  on the next request. With a database row that is one `UPDATE`; with a self-contained token it needs a
+  deny-list, which is a session table again.
+- **Every request** looks the hash up together with the account (`LEFT JOIN customers / staff_users`), so a
+  blocked customer or deactivated staff member loses access immediately even with an unexpired session.
+- **Wrong account type:** a customer token presented on the admin API gets 403 `WRONG_ACCOUNT_TYPE`; the
+  store cookie is never read on the admin host (401).
+- **Pages:** `src/proxy.ts` makes an _optimistic_ check, looking only at whether a cookie is present.
+  - Store `/account*` without a cookie redirects to `/login?next=…`.
+  - Every admin page except `/login` redirects to `/login` without a cookie (deny by default, so a page
+    added in a later wave cannot be left unprotected by forgetting a list entry).
+  - The page itself verifies the session in a Server Component inside `<Suspense>` (the Next 16 pattern
+    for Cache Components) and redirects if it is invalid.
+  - APIs always verify.
+- **Consequence:** a signed-out visitor to an unknown admin URL now sees the sign-in page instead of a 404
+  (it no longer reveals which admin URLs exist). The Wave 1 admin 404 tests now sign in first.
+- **Open-redirect protection:** `?next=` is used only if it is a same-site path (`src/lib/safe-next-path.ts`).
+- **Clean-up:** expired rows are filtered by `expires_at` (indexed); deleting old rows is a Wave 14 job.
+
+## TD-012 Account enumeration trade-off (owner decision, Wave 2B)
+
+- **Sign-in:** unknown email, wrong password, blocked customer, deactivated staff and (outside development
+  and test) refused demo credentials all return the same 401 body (`INVALID_CREDENTIALS`, "The email or password is incorrect."). For an unknown email the server
+  still runs one Argon2id verification against a dummy hash, so response time does not reveal whether the
+  account exists. An HTTP test sends all six cases (store: unknown, wrong, blocked; admin: unknown, wrong, deactivated) to the
+  running server and requires identical status, body and headers (apart from `x-request-id` and `date`).
+- **Registration:** a duplicate email returns 409 `EMAIL_ALREADY_REGISTERED` (owner decision: clear feedback
+  for shoppers). This does reveal that an address is registered.
+- **Mitigation:** registration is rate-limited per client IP (10 per hour in development and production),
+  and sign-in per IP + email (5 per minute). How the client IP is found: TD-015.
+- **Alternative not taken:** always answer "check your email" and send a message. That needs an email
+  provider, which the project does not have.
+
+## TD-013 Demo passwords: one known password, development and test only (Wave 2B)
+
+- **Decision:** the 8 seeded accounts use `DemoPass!2026`:
+  - 5 staff and 3 customers;
+  - all on the reserved domain `demo-store.test`;
+  - hashed with Argon2id when seeded.
+
+  The password and domain live in `src/modules/identity/demo-credentials.ts` (shared by the seed and the
+  sign-in code). They are listed in the README, labelled development/demo only.
+
+- **Layer 1, seeding (allowlist):** `assertDemoCredentialsAllowed(APP_ENV)` permits only `development` and
+  `test`. It refuses `production`, `staging`, a typo such as `prod`, a different letter case
+  (`Production`) and an empty value. Both `npm run db:seed` and `npm run db:seed:demo-passwords` call it
+  before any database work.
+  - Unit tests: `demo-credentials.test.ts`.
+  - Command-level proof (journal, final checks): 8 refused runs against the test database, exit 1, no change.
+  - _Correction:_ until the final checks this guard refused only the exact value `production`, and the
+    "test" cited here was a manual rehearsal. Both are now fixed.
+- **Layer 2, sign-in (runtime):** credentials are refused unless **both** of these hold:
+  1. `authentication.demoAccountsAllowed` is `true` (it is `false` in the staging and production configs,
+     enforced by a config test);
+  2. `APP_ENV` is `development` or `test`.
+
+  When refused:
+  - any sign-in with an `@demo-store.test` email or with the demo password answers the ordinary 401
+    after a dummy hash check (timing unchanged);
+  - registration with either answers 400 with a field error.
+
+  This protects production even if demo rows arrive by accident, for example in a copied database dump.
+  Proven with the real build running `APP_ENV=production` and the production config against a database
+  containing all 8 demo accounts:
+  - all 8 sign-ins → 401, while the same database under the test config → 200;
+  - registration with the demo password or domain → 400.
+
+- **Changing existing databases without side effects:** `applyDemoPasswordHashes` updates only
+  `password_hash`, with a raw `UPDATE … WHERE email = …`. Prisma's `update()` would also change `updated_at`.
+  It skips accounts whose hash already verifies, so a second run changes nothing.
+- **Residual risk:**
+  - The seed scripts load `.env`. Running `db:seed` on a production database from a developer machine whose
+    `.env` says `APP_ENV=development` would pass layer 1. Layer 2 still refuses every demo sign-in on the
+    production server.
+  - Wave 15 deployment notes must state that seeds are never run against production.
+- **Future password changes** (none exist yet) must apply the same refusal.
+
+## TD-014 Audit logging (Wave 2B)
+
+- **Events:**
+  - `customer.registered`
+  - `customer.profile_updated`
+  - `customer.address_created`, `customer.address_updated`, `customer.address_archived`
+  - `customer.default_address_changed`
+  - `customer.logout_everywhere`
+  - `staff.login_succeeded`, `staff.login_failed`
+- **Same transaction:** each audit row is written in the transaction that makes the change, so a rolled-back
+  change never leaves an audit row behind (integration test).
+- **Failed staff sign-ins** are written on their own, since there is no change to attach them to:
+  - actor `SYSTEM`;
+  - the staff user's id, or `unknown`;
+  - the email tried;
+  - a reason: `UNKNOWN_EMAIL`, `WRONG_PASSWORD`, `ACCOUNT_DEACTIVATED` or `DEMO_CREDENTIAL_REFUSED`
+    (TD-013).
+
+  The reason is visible only to people with `audit.read`; the client always gets the identical 401.
+
+- **No secrets:**
+  - `recordAuditEvent` removes any key matching `pass(word)?|hash|token|secret|otp|cookie|session|credential`
+    before writing.
+  - Data is flat (no nested objects), so nothing can hide one level down.
+  - Address events record which fields changed plus city and pincode, never street lines or phone numbers.
+  - Tests scan every audit row for these keys, for `$argon2`, and for the raw password and session token
+    used in the test.
+- **Consequence found by the tests:** the filter also removed a harmless key, `revokedSessionCount`. The key
+  is now `revokedCount`; the filter stays strict.
+- **IP address:** stored only if it parses as an IP; see TD-015 for where it comes from.
+
+## TD-015 Client IP for rate limits and audit (Wave 2B, revised in final check 7)
+
+- **Where the IP is used:** sign-in rate limits (`ip|email`), the registration rate limit (`ip`) and
+  `audit_logs.ip_address`. All of them get it from one function, `clientIpAddress` in
+  `src/lib/client-ip.ts`, called only by `requestMetadata` in `access-control.ts`.
+- **Setting:** `authentication.trustedProxyHopCount`, a required whole number from 0 to 5 (strict schema;
+  the old `trustProxyHeaders` key is refused).
+  - `0`: `X-Forwarded-For` is never read. The IP is unknown.
+  - `N ≥ 1`: the client IP is the entry N places from the **right**. If there are fewer than N entries,
+    or that entry is not a valid IP, the IP is unknown. It never falls back to another entry.
+- **Why from the right:** each proxy appends the address it received the connection from, so entries on
+  the left are whatever the client sent. The first version used the leftmost entry. Behind any proxy that
+  appends (nginx `$proxy_add_x_forwarded_for`, AWS ALB, most ingress controllers), that let a client
+  choose a new IP on every request: unlimited sign-in guesses per account, no registration limit, and a
+  forged IP in the audit trail. Found by an independent review; red/green tests in
+  `tests/integration/client-ip-trust.test.ts`.
+- **Next.js detail:** the Next server sets `x-forwarded-for` to the socket address only when the request
+  has no such header (`??=` in `base-server.js`). A client-supplied header passes through unchanged, so
+  with no proxy in front the header is entirely client-controlled. That is why the default is 0.
+- **When the IP is unknown** (development, test, and staging/production until the topology is known):
+  - registration uses one shared bucket (`unknown-client`);
+  - sign-in uses a bucket per email.
+    In local development that means about 10 registrations per hour across all local users. The test
+    config raises registration to 50 per minute so repeated HTTP and browser runs do not trip it.
+- **Staging and production are set to 0 on purpose; this is a deployment requirement, not a finished
+  production setting.** No hosting platform has been chosen or verified, so
+  no proxy is trusted. Before the first hosted deployment the hop count must be set from evidence about
+  the real topology (see DEPLOYMENT_GUIDE). For example, a platform that overwrites the header with the
+  client address, or a single appending proxy, needs 1; a CDN in front of a load balancer needs 2.
+- **Not done (separate decision):** a per-account sign-in limit keyed on email alone (L20).

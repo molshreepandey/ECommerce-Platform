@@ -23,13 +23,17 @@
     "db:reset": "prisma migrate reset --force && npm run db:seed",
     "docs:erd": "prisma generate --generator erd",
     "test:http": "vitest run --config vitest.http.config.ts",
+    "test:http:dev": "TEST_SERVER_MODE=development vitest run --config vitest.http.config.ts",
     "test:e2e": "playwright test",
     "postinstall": "prisma generate --generator client",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "start:test": "tsx scripts/start-test-server.ts"
+    "start:test": "tsx scripts/start-test-server.ts",
+    "start:test:dev": "tsx scripts/start-test-server.ts --dev",
+    "db:seed:demo-passwords": "tsx prisma/seed/demo-passwords.ts"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
+    "@node-rs/argon2": "2.2.2",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "chart.js": "^4.6.1",

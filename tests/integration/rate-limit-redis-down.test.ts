@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { waitForFreshRateLimitWindow } from './support/rate-limit-window';
 import { truncateAllTestTables } from './support/test-database';
 
 const closedRedisPort = 'redis://127.0.0.1:6399';
@@ -24,7 +25,8 @@ describe('rate limiting with Redis unreachable (real connection failure)', () =>
       await import('@/lib/rate-limit/rate-limit');
     const { getConfig } = await import('@/lib/config');
     const { getDatabase } = await import('@/lib/db');
-    const { maxRequests } = getConfig().rateLimits['customer-register'];
+    const { maxRequests, windowSeconds } = getConfig().rateLimits['customer-register'];
+    await waitForFreshRateLimitWindow(windowSeconds);
 
     const startedAt = performance.now();
     const decisions = [];

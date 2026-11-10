@@ -1005,3 +1005,418 @@ The Wave 2A commit `6863ad24d95b95b47b1083b79ad13da589be39b2` already existed wh
 | Dev database                                | identical to the Wave 2A start and the Wave 1 baseline                                                                                 |
 | Redis                                       | 0 leftover keys                                                                                                                        |
 | Containers                                  | postgres 18.6, elasticsearch 9.5.5, redis 8.10.3: healthy, localhost only                                                              |
+
+## Wave 2B Step 0: Argon2id compatibility and performance gate (2026-11-07, passed and approved)
+
+- **Setup:**
+  - Isolated scratch project (the repository was not touched).
+  - `@node-rs/argon2@2.2.2` pinned exactly; Argon2id, memory 19,456 KiB, 2 iterations, parallelism 1.
+  - Owner criterion: verify p95 ≤ 250 ms on the owner's Mac, from at least 50 measurements.
+- **Machine:** Apple M2 (4 performance + 4 efficiency cores), 8 GiB, macOS 27.0.1, Node v26.13.0, on AC power, **Low Power Mode on** (so these timings are pessimistic).
+- **Results** (full table in `docs/TECHNICAL_DECISIONS.md` TD-009):
+  - **macOS arm64:** verify p95 8.7 / 17.8 / 8.7 ms over three runs of 50 → **passes** (worst 17.8 ms).
+  - Linux arm64 (native container): verify p95 11.8 ms.
+  - Linux x64 (`node:26.13.0` amd64 container, emulated): installs the `linux-x64-gnu` binding and runs correctly; verify p95 23.4 ms. This proves compatibility only, not speed.
+  - 10 concurrent logins on the Mac: per-login p95 about 40 ms; async event-loop gap p99 ≤ 2.7 ms; peak memory +61 MiB.
+  - Correctness checks pass on every platform; no install scripts anywhere.
+- **Measurement correction:** the first event-loop instrument (`monitorEventLoopDelay`) could not detect a known 44 ms block, so its numbers were discarded and replaced by a validated 1 ms timer-gap measurement.
+- **Side effects on the machine:** the `node:26.13.0` Docker image (amd64 and arm64, about 1 GB); scratch results kept outside the repository.
+
+## Wave 2B Step 1: dependency and identity-constraints migration on the test database (2026-11-07, awaiting owner approval)
+
+Approved scope: add the dependency, create the additive migration, apply it to `ecommerce_test` **only**, test it, and record the Argon2id results. Not done, by instruction: no change to the development database, no seed run, no demo password change, no other Wave 2B code, no commit or push.
+
+### Changes
+
+| File                                                                  | Change                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `package.json`, `package-lock.json`                                   | `@node-rs/argon2` `2.2.2` (exact). Native binding `argon2-darwin-arm64`; no install scripts; `npm audit --omit=dev` 0 vulnerabilities                                                                                                                                                                                     |
+| `prisma/schema.prisma`                                                | `@@index([expiresAt])` on `Session` (one line)                                                                                                                                                                                                                                                                            |
+| `prisma/migrations/20261107150000_identity_constraints/migration.sql` | new, additive only: `CREATE INDEX sessions_expires_at_idx`; CHECK `customers_email_lowercase_check`, `staff_users_email_lowercase_check`, `customers_phone_format_check` (`^[6-9][0-9]{9}$`), `customer_addresses_phone_format_check`. A scan found no `DROP`, `TRUNCATE`, `DELETE`, `UPDATE`, `ALTER COLUMN` or `RENAME` |
+| `tests/integration/identity-constraints.test.ts`                      | new: 14 tests                                                                                                                                                                                                                                                                                                             |
+| `docs/TECHNICAL_DECISIONS.md`                                         | TD-009 rewritten with the benchmark results                                                                                                                                                                                                                                                                               |
+| `docs/REQUIREMENTS_TRACEABILITY.md`                                   | R1, R2 updated                                                                                                                                                                                                                                                                                                            |
+
+- The index SQL was generated by `prisma migrate diff` against **the test database**, with the URL overridden and checked to end with `_test`. The CHECK constraints are hand-written (Prisma cannot express them).
+- Read-only check before writing the migration: the development data has 0 rows violating any of the new constraints.
+
+### Migration result
+
+```
+guard passed: target is a _test database distinct from development
+$ DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy
+Datasource "db": PostgreSQL database "ecommerce_test", schema "public" at "localhost:5433"
+2 migrations found in prisma/migrations
+Applying migration `20261107150000_identity_constraints`
+All migrations have been successfully applied.          (exit 0)
+$ (test DB) npx prisma migrate status   → Database schema is up to date!
+$ (dev DB)  npx prisma migrate status   → Following migration have not yet been applied: 20261107150000_identity_constraints
+$ (test DB) npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code   → exit 0 (no drift)
+```
+
+| Database          | Before                             | After                               | Objects added                                                                 |
+| ----------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------- |
+| `ecommerce_test`  | 32 CHECK, 133 indexes, 1 migration | 36 CHECK, 134 indexes, 2 migrations | exactly the 4 constraints, `sessions_expires_at_idx` and the migration record |
+| `ecommerce` (dev) | 32 CHECK, 133 indexes, 1 migration | **unchanged**                       | none                                                                          |
+
+### Tests
+
+| Check                                                                              | Result                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run test:integration`                                                         | **32 / 32** (18 existing + 14 new). The new tests cover: migration recorded and index present; lower-case emails accepted and mixed case rejected for customers and staff; phones with `+91`, spaces, 9 or 11 digits, a leading 5 or letters rejected; valid 6–9 starting numbers accepted; the same rule on addresses |
+| `npm test`                                                                         | **101 / 101**                                                                                                                                                                                                                                                                                                          |
+| `npm run lint`, `npm run typecheck`, `npm run format:check`, `npx prisma validate` | all pass                                                                                                                                                                                                                                                                                                               |
+
+### Pending owner approvals at the end of Step 1
+
+Items 1–3 were approved on 2026-11-07 and are recorded below (Steps A, B and C). Committing and pushing are
+still not approved.
+
+1. Apply `20261107150000_identity_constraints` to the development database (`npm run db:deploy`).
+2. Re-run the development seed with Argon2id hashes of the demo password (changes `password_hash` on 8 rows).
+3. The remaining Wave 2B implementation.
+4. Committing these Step 1 changes; pushing.
+
+## Wave 2B Steps A and B: development database migration and demo password hashes (2026-11-07, done)
+
+Owner conditions: preserve all existing data; no destructive operation; demo password for development only.
+
+### Step A: `npm run db:deploy` on the development database
+
+| Check                                          | Before                                        | After                                                                          |
+| ---------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------ |
+| Data fingerprint (46 tables, row counts + md5) | `84956ffb57af5da58ba41b5ea154611d`, 1625 rows | `452f5293880ecbb5767c41477d69cf05`, 1626 rows                                  |
+| Tables whose content changed                   |                                               | `_prisma_migrations` only (1 → 2 rows)                                         |
+| Schema objects                                 | 32 CHECK, 133 indexes                         | 36 CHECK, 134 indexes: exactly the 4 constraints and `sessions_expires_at_idx` |
+| `prisma migrate diff` against the schema       |                                               | exit 0 (no drift)                                                              |
+
+### Step B: `npm run db:seed:demo-passwords` (development)
+
+A full re-seed was **not** used. A rehearsal on the test database showed a second full seed run changes
+`updated_at` in 25 tables. A targeted script was written instead (TD-013), which updates only
+`password_hash` with raw SQL and skips hashes that already verify.
+
+- Rehearsal on `ecommerce_test` first:
+  - the production refusal throws;
+  - run 1 updated 8 rows, and with `password_hash` excluded every table was identical;
+  - run 2 updated 0 rows (byte-identical database).
+- Development run: `Demo password hashes: 8 updated, 0 already current, 0 missing.`
+
+| Check                                   | Result                                                                                                   |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Fingerprint                             | `452f5293…` → `3a6b72f9d53ed06b19f3f136d24b84a6`, 1626 rows (unchanged count)                            |
+| Tables whose content changed            | `customers`, `staff_users`                                                                               |
+| With `password_hash` excluded           | all 46 tables identical                                                                                  |
+| Combined A + B versus the Wave 2B start | only `_prisma_migrations`, `customers`, `staff_users` changed                                            |
+| Every account                           | 8 / 8 hashes start `$argon2id$v=19$m=19456,t=2,p=1$`; `DemoPass!2026` verifies, `DemoPass!2025` does not |
+
+## Wave 2B: accounts, sessions, roles, addresses, audit (2026-11-07, complete, awaiting owner approval)
+
+Not done, by instruction: no commit, no push. The development database was not used by any test; every
+runtime test used `ecommerce_test` and the `ecom:test:` Redis prefix.
+
+### What was built
+
+| Area                               | Files                                                                                                                                                                                                          |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sessions                           | `session-token.ts`, `session.repository.ts`, `session.service.ts`, `src/lib/session-cookie.ts` (TD-011)                                                                                                        |
+| Who is calling                     | `access-control.ts` (`requireCustomer`, `requireStaff`, `requirePermission`), `current-session.ts` (Server Components), `src/lib/client-ip.ts`                                                                 |
+| Customer accounts                  | `customer-account.repository.ts` / `.service.ts`: register, sign in, sign out everywhere, profile                                                                                                              |
+| Staff accounts                     | `staff-account.repository.ts` / `.service.ts`: sign in with success and failure audit, profile with roles and permissions                                                                                      |
+| Addresses                          | `address.repository.ts` / `.service.ts` / `.errors.ts`: create, edit, archive, set default, customer-row lock                                                                                                  |
+| Audit                              | `src/modules/audit/*` (TD-014)                                                                                                                                                                                 |
+| Validation and errors              | `identity.schema.ts`, `identity.errors.ts`, `permissions.ts`, `src/lib/request-body.ts`, `isUniqueViolation` in `src/lib/db.ts`                                                                                |
+| API routes (11 files, 14 handlers) | `src/app/api/store/auth/{register,login,logout,logout-all}`, `store/account/profile`, `store/account/addresses[/{id}[/default]]`, `admin/auth/{login,logout,me}`                                               |
+| Proxy                              | sign-in redirects (`src/lib/sign-in-redirect.ts`, admin deny-by-default), `src/lib/safe-next-path.ts`                                                                                                          |
+| Pages                              | store `/login`, `/register`, `/account`, `/account/addresses`; admin `/login`; admin dashboard now signed-in with a permission-filtered navigation                                                             |
+| Components                         | molecules `FormField`, `PasswordField`, `ConfirmDialog`, `AddressCard`; organisms `LoginForm` (both sites), `RegisterForm`, `ProfileForm`, `AccountSessionActions`, `AddressBook`, `AdminSessionMenu`; 7 icons |
+| Test fixtures                      | `tests/integration/support/identity-fixtures.ts`; `scripts/prepare-test-identity.ts` (run by `npm run start:test`)                                                                                             |
+| Config                             | `config/config.test.json` rate limits raised (sign-in 20/min, registration 50/min; TD-015)                                                                                                                     |
+| Docs                               | `docs/walkthroughs/wave-2b.md`, TD-011–TD-015, API docs, traceability (R1, R2, R15, T2, T4, T6, T8, X2), README demo accounts, testing strategy, architecture status                                           |
+
+### Bugs and surprises found during Wave 2B, all fixed and verified
+
+1. **The audit filter dropped `revokedSessionCount`.** It matched the word "session". Found by an
+   integration test. The key was renamed to `revokedCount`; the filter stays strict.
+2. **Next 16 keeps the previous page mounted but hidden** (React `<Activity>`). Browser tests then found two
+   "Email" inputs; locators now match visible elements only. Not an app bug.
+3. **Next's route announcer is also `role="alert"`.** Tests match alerts by text.
+4. **Every registration over plain local HTTP shares one rate-limit bucket.** Route handlers cannot see the
+   socket IP, and proxy headers are not trusted locally. Test limits were raised so repeated runs pass.
+   Documented in TD-015.
+5. **Empty optional address lines.** These would have been stored as `""` when cleared in the edit form.
+   They are now stored as `NULL`, the same as a line that was never filled.
+6. **ESLint flagged two Next/React deprecations,** both fixed: React 19.3 deprecates `FormEvent` (now
+   `SubmitEvent`), and Next.js prefers `router.replace` over `window.location.assign`.
+
+### Mistakes made and corrected (process)
+
+- Two test bugs of my own:
+  - an eager array of promises in the 404 address test caused unhandled rejections;
+  - `getByText('Default')` also matched "Make default".
+- One `as` cast (`permissions.ts`) and one `as keyof` cast in the first draft of the address form were
+  removed; a scan of every changed TypeScript file now finds none.
+- The README first described a demo customer as having orders without checking; it now states only what a
+  read-only query confirmed (2 saved addresses each).
+
+### Behaviour change to Wave 1 tests (intentional)
+
+The admin site is now deny-by-default, so a signed-out visitor to an unknown admin URL is redirected to
+sign-in instead of seeing a 404. The Wave 1 admin 404 tests were updated as follows:
+
+- HTTP tests send a placeholder cookie.
+- Browser tests sign in first.
+- The "admin home returns 200" checks now target `/login`.
+
+All original assertions about the 404 pages themselves are unchanged and pass.
+
+### Test results (final regression, 2026-11-07 14:43 UTC, Node v26.13.0, final working tree)
+
+| Command                    | Result                                                    | Change since Wave 2A                                                                                                                        |
+| -------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run format:check`     | exit 0                                                    |                                                                                                                                             |
+| `npm run lint`             | exit 0, 0 warnings                                        |                                                                                                                                             |
+| `npm run typecheck`        | exit 0                                                    |                                                                                                                                             |
+| `npm test`                 | **147 / 147**                                             | +48 (session tokens, cookies, client IP, sign-in redirect, `next` safety, audit sanitiser, Argon2id, API client, navigation filter, config) |
+| `npm run test:integration` | **70 / 70**                                               | +52 (identity constraints 14, sessions and access 9, customer accounts 12, addresses 10, staff sign-in 7)                                   |
+| `npm run build`            | exit 0; account and admin pages are partial prerender (◐) |                                                                                                                                             |
+| `npm run test:http`        | **38 / 38**                                               | +19 (identity API suite 17, sign-in redirect 2)                                                                                             |
+| `npm run test:e2e`         | **40 / 40** (desktop + 360 px)                            | +22 (customer journey, field errors, password toggle, 5 staff roles, wrong password, customer on admin, keyboard)                           |
+
+Stability: HTTP, browser and integration suites were run a second time straight away (inside the same
+rate-limit window). All passed again.
+
+### Database verification
+
+| Database          | Result                                                                                                                                                                                                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ecommerce` (dev) | `3a6b72f9d53ed06b19f3f136d24b84a6`, 46 tables, 1626 rows: **identical to the post-Step-B baseline** after all of Wave 2B. `sessions` 0 rows, `audit_logs` 0 rows. 36 CHECK, 134 indexes, migrations `20261107000000_init`, `20261107150000_identity_constraints` |
+| `ecommerce_test`  | reset by every `npm run start:test` and truncated by integration tests, as designed                                                                                                                                                                              |
+| Redis             | 0 keys after the run (integration tests delete `ecom:test:*`; development wrote none)                                                                                                                                                                            |
+
+### Known limitations after Wave 2B
+
+- **Duplicate-email 409 reveals that an email is registered** (owner decision, TD-012).
+- **No password reset or email verification** (no email provider). Not in the brief's MVP.
+- **Expired sessions are not deleted yet**; they are filtered by the indexed `expires_at`. Clean-up job in
+  Wave 14.
+- **Locally, registration is limited per shared bucket, not per person** (TD-015). Production relies on a
+  proxy setting `X-Forwarded-For`.
+- **The audit trail has no admin screen yet** (Wave 10, `audit.read`).
+- **Admin feature APIs do not exist yet.** `requirePermission` is tested directly; each later admin API
+  must call it.
+- **The development server was not exercised in this wave.** Signing in would add sessions and audit rows
+  to the development database, which the fingerprint check is meant to keep unchanged. The production
+  build was tested with the test configuration instead.
+
+### Pending owner approvals (not done)
+
+1. Review of Wave 2B.
+2. Committing Wave 2B (Step 1 + Steps A/B + Stage C) locally; pushing.
+
+## Wave 2B final checks requested by the owner (2026-11-07, done; commit deferred)
+
+The owner approved Wave 2B subject to six checks, then asked to stop for the day **without committing**.
+All six checks are done. Code changes made during the checks are listed under each one.
+
+### 1. Identical sign-in errors
+
+`tests/http/identity.http.test.ts` sends six failing sign-ins to the running server:
+
+- store: unknown email, wrong password, blocked customer with the correct password;
+- admin: unknown email, wrong password, deactivated staff with the correct password.
+
+All six return 401 with byte-identical bodies and identical headers (ignoring `x-request-id` and `date`),
+and none sets a cookie. The body is:
+`{"error":{"code":"INVALID_CREDENTIALS","message":"The email or password is incorrect.","details":null}}`.
+
+The blocked and deactivated states are set by `tests/http/support/test-database-writer.ts`, which works on
+the guarded `*_test` database only.
+
+### 2. Demo credentials cannot reach or work in production
+
+Gaps found and fixed:
+
+- The seed guard refused only the exact value `production`. It allowed `staging`, `prod`, `Production`
+  and an empty `APP_ENV`.
+- TD-013 cited "a test" that was really a manual rehearsal.
+- There was no runtime defence.
+
+What was built (TD-013):
+
+| Layer             | Rule                                                                                                                                                                                                                                                                                                                                                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Seed (allowlist)  | `assertDemoCredentialsAllowed(APP_ENV)` permits only `development` and `test`                                                                                                                                                                                                                                                                                |
+| Sign-in (runtime) | needs `authentication.demoAccountsAllowed` = true **and** `APP_ENV` in {development, test}. The flag is `false` in the staging and production configs (enforced by a config test). Otherwise `@demo-store.test` emails and `DemoPass!2026` get the ordinary 401 (staff refusals audited as `DEMO_CREDENTIAL_REFUSED`), and registration with either gets 400 |
+
+A bug found by the new unit tests and fixed: a default parameter made `assertDemoCredentialsAllowed(undefined)`
+fall back to `process.env.APP_ENV`. The environment is now an explicit argument.
+
+| Evidence                                                                                                                             | Result                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit tests (`demo-credentials.test.ts`)                                                                                              | allowlist; refusal of `production`, `staging`, `prod`, `Production`, `''` and unset; both layers must agree                                                                                                                                                     |
+| `npm run db:seed` and `db:seed:demo-passwords` with `APP_ENV` = production, staging, prod, Production (8 runs, aimed at the test DB) | all exit 1 before any database work; test DB fingerprint unchanged (`4fc1488b…`)                                                                                                                                                                                |
+| Real build, `APP_ENV=production` + production config, on a test DB holding all 8 demo accounts with valid Argon2id hashes            | all 8 demo sign-ins 401 (5 staff refusals audited); the same database under the test config: 200. Registration with the demo password or domain: 400; an ordinary registration: 201. The 12 Redis keys this check created under `ecom:production:` were deleted |
+| Integration (`demo-credentials-refused.test.ts`, 5 tests)                                                                            | refusal, identical 401, demo password on an ordinary email refused, audit reason, registration 400, ordinary accounts unaffected                                                                                                                                |
+
+Residual risk (traceability L5): seed scripts read `.env`, so seeding a production database from a
+developer machine would pass layer 1. Layer 2 still refuses every demo sign-in.
+
+### 3. Development database fingerprint
+
+- **Method:** for each of the 46 tables, the row count and the md5 of all rows (`string_agg` of the row
+  text in sorted order). The fingerprint is the md5 of that 46-line list.
+- **Baseline:** `84956ffb57af5da58ba41b5ea154611d`. This is the state after the Wave 1 seed, re-verified
+  unchanged at every Wave 1, Wave 2A and Wave 2B Step 0/1 checkpoint, and taken immediately before Step A.
+
+| Point                                                     | Fingerprint                        | Rows |
+| --------------------------------------------------------- | ---------------------------------- | ---- |
+| Wave 2B start (before Step A)                             | `84956ffb57af5da58ba41b5ea154611d` | 1625 |
+| After Step A (migration)                                  | `452f5293880ecbb5767c41477d69cf05` | 1626 |
+| After Step B, and at every check since (latest 15:05 UTC) | `3a6b72f9d53ed06b19f3f136d24b84a6` | 1626 |
+
+Every table-level difference between the start and now, and nothing else:
+
+| Table                | Change                                             | Intended by                  |
+| -------------------- | -------------------------------------------------- | ---------------------------- |
+| `_prisma_migrations` | 1 → 2 rows (`20261107150000_identity_constraints`) | Step A                       |
+| `customers`          | content hash changed; 3 rows                       | Step B (`password_hash` × 3) |
+| `staff_users`        | content hash changed; 5 rows                       | Step B (`password_hash` × 5) |
+
+- With `password_hash` excluded (`to_jsonb(row) - 'password_hash'`), all 46 tables are identical to the
+  state before Step B. That includes `updated_at`, which proves the raw `UPDATE` touched nothing else.
+- Schema objects added by Step A: 4 CHECK constraints and `sessions_expires_at_idx` (32 → 36 CHECK,
+  133 → 134 indexes).
+- No test, smoke run or check ever connected the app to the development database. `sessions` and
+  `audit_logs` there have 0 rows.
+
+### 4. Development-server limitation and a safe smoke test
+
+- New `npm run start:test:dev`: the same guarded reset of `ecommerce_test` as `start:test`, then `next dev`
+  on port 3100 with the test config.
+- New `npm run test:http:dev`: the HTTP suite, expecting the dev-only `'unsafe-eval'` in the CSP.
+- Procedure documented in `docs/TESTING_STRATEGY.md`.
+- Result: `test:http:dev` 39 / 39; `test:e2e` on `next dev` 40 / 40 in three consecutive runs, with no
+  full reloads logged.
+
+The smoke runs exposed two test-design problems, both fixed:
+
+- **A Radix Toast duplicate.** A short-lived screen-reader copy of the toast text made one assertion
+  ambiguous; it is now scoped to the Notifications region.
+- **Staff sign-in rate limit.** The browser suite signs in as one staff account about 12 times per run,
+  so back-to-back runs hit 429. The test config's staff sign-in limit is now 100/min (development and
+  production unchanged).
+
+The final regression then exposed one more:
+
+- **The clock-aligned rate-limit window.** `rate-limit-redis-down.test.ts` failed once (counter 41 of 50
+  at the 51st call): the higher test limits made "limit + 1" loops long enough to cross a minute
+  boundary. The new `waitForFreshRateLimitWindow()` is used by the 4 such tests. A run started 8 s before
+  a boundary passed.
+
+### 5. Git diff (HEAD `6d60892`, nothing staged)
+
+| Kind                   | Count                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------- |
+| Modified tracked files | 31 (1,185 insertions, 101 deletions)                                                |
+| New files              | 103 (5,711 lines), plus `docs/SESSION_HANDOFF.md` added at the end of the day = 104 |
+| Deleted files          | 0                                                                                   |
+
+- Every file was reviewed: all are Wave 2B code, tests, docs, config or the migration.
+- `package-lock.json` adds only `@node-rs/argon2` 2.2.2 and its 13 optional platform bindings.
+- `AGENTS.md` is unchanged.
+- Ignored artefacts (`.env`, `.next/`, `test-results/`, `playwright-report/`, `src/generated/`) are not
+  included.
+
+### 6. Final regression (2026-11-07 15:04–15:05 UTC, Node v26.13.0, final code)
+
+| Command                                              | Result                                         |
+| ---------------------------------------------------- | ---------------------------------------------- |
+| `npm run format:check`, `lint`, `typecheck`, `build` | all exit 0                                     |
+| `npm test`                                           | **159 / 159**                                  |
+| `npm run test:integration`                           | **75 / 75**                                    |
+| `npm run test:http`                                  | **39 / 39**                                    |
+| `npm run test:e2e`                                   | **40 / 40** (desktop + 360 px)                 |
+| Dev database afterwards                              | `3a6b72f9d53ed06b19f3f136d24b84a6` (unchanged) |
+
+Outstanding limitations are listed in `docs/REQUIREMENTS_TRACEABILITY.md` ("Outstanding limitations", L1–L19).
+
+### Not done, by owner instruction (end of day)
+
+The local Wave 2B commit was approved after the checks, but the owner then asked to stop without
+committing. Nothing is committed or pushed. Wave 3 is not started.
+
+## Wave 2B final check 7: client IP behind proxies (2026-11-10, done; awaiting owner review)
+
+An independent read-only review of the Wave 2B code found one should-fix security issue. The owner
+approved fix A only (trusted proxy hop count). Fix B (per-account sign-in limit) is recorded as L20 and the
+re-login session observation as L21; neither was implemented. Nothing committed or pushed.
+
+### The issue
+
+- `src/lib/client-ip.ts` used the **leftmost** `X-Forwarded-For` entry, and staging/production set
+  `trustProxyHeaders: true`. Proxies that append (nginx, AWS ALB, most ingress controllers) put the real
+  address on the right, so the leftmost entry is whatever the client sent.
+- Effect behind such a proxy, or with `next start` exposed directly: a new forged IP per request gave
+  unlimited sign-in guesses per account (staff included), no registration limit (each attempt costs one
+  Argon2id hash) and a forged `audit_logs.ip_address`.
+- Next.js detail: `base-server.js` sets `x-forwarded-for` from the socket only when the header is absent
+  (`??=`), so a client-supplied header passes through unchanged.
+- Not reachable in development or test (`trustProxyHeaders: false`).
+
+### The fix
+
+| File                                                       | Change                                                                                                                                                                                                         |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/lib/client-ip.ts`                                     | `clientIpAddress(headers, trustedProxyHopCount)`: hop count < 1 (or not a whole number) → `null`; otherwise the entry N places from the right; fewer entries or an invalid entry → `null`, never another entry |
+| `src/lib/config/config.schema.ts`                          | `authentication.trustedProxyHopCount`: required, `z.int().min(0).max(5)`; the old key is refused by the strict schema                                                                                          |
+| `src/modules/identity/access-control.ts`                   | `requestMetadata` passes the hop count (the only caller; all 7 IP consumers use its result)                                                                                                                    |
+| `config/config.{development,test,staging,production}.json` | `"trustedProxyHopCount": 0`. Staging and production stay at 0 until the hosting topology is verified (no platform assumed)                                                                                     |
+| Docs                                                       | TD-015 rewritten, TD-012 cross-reference, L4 updated, L20 and L21 added, DEPLOYMENT_GUIDE step, TESTING_STRATEGY, T8 counts                                                                                    |
+
+Rate-limit fallback behaviour (`unknown-client` registration bucket, per-email sign-in bucket, Redis →
+Postgres store fallback) and audit logging are unchanged.
+
+### Red/green evidence (Node v26.13.0)
+
+Tests were written first and run against the unchanged implementation. For the integration run only, the
+test's config override also set the old implementation's production value (`trustProxyHeaders: true`);
+that one line was removed after the fix. No assertion changed between the runs.
+
+| Run         | Command                                                                                          | Old implementation                                                         | Fixed   |
+| ----------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- | ------- |
+| Unit        | `npx vitest run src/lib/client-ip.test.ts src/lib/config/load-config.test.ts`                    | 20 failed, 22 passed (e.g. `expected '198.51.100.99' to be '203.0.113.7'`) | 42 / 42 |
+| Integration | `npx vitest run --config vitest.integration.config.ts tests/integration/client-ip-trust.test.ts` | 6 failed, 2 passed                                                         | 8 / 8   |
+
+The six integration failures on the old code reproduce the attack: the over-limit sign-in returned 401
+instead of 429 (customer and staff), the over-limit registration succeeded, the audit row stored the forged
+`198.51.100.42`, and an invalid rightmost entry fell back to the leftmost. The two that passed are guards
+(separate buckets for different real clients; the per-email fallback with no header). The new HTTP test
+(`tests/http/client-ip.http.test.ts`, forged headers share one bucket when no proxy is trusted) is a guard
+for the committed test configuration and passes on both.
+
+### Full regression (2026-11-10 08:59–09:02 UTC, Node v26.13.0)
+
+| Command                                              | Result                              |
+| ---------------------------------------------------- | ----------------------------------- |
+| `npm run format:check`, `lint`, `typecheck`          | all exit 0                          |
+| `npm test`                                           | **179 / 179** (+20)                 |
+| `npm run test:integration`                           | **83 / 83** (+8)                    |
+| `npm run build`                                      | exit 0                              |
+| `npm run test:http` (production build, `start:test`) | **40 / 40** (+1)                    |
+| `npm run test:e2e` (production build)                | **40 / 40** (desktop + 360 px)      |
+| `npm run test:http:dev` (`start:test:dev`)           | **40 / 40**                         |
+| `npm run test:e2e` on `next dev`                     | **40 / 40**, no full reloads logged |
+
+### Database and services
+
+- Development database fingerprint before (08:57 UTC) and after (09:02 UTC):
+  `3a6b72f9d53ed06b19f3f136d24b84a6`, per-table output identical. No migration.
+- Redis: 0 development keys; 20 `ecom:test:` rate-limit counters left by the HTTP and browser runs, all
+  with a TTL under 35 s.
+- Test servers stopped; ports 3000, 3100 and 3200 free.
+
+### Pending owner approvals
+
+1. Review of check 7.
+2. The local Wave 2B commit (now including check 7). Push not approved. Wave 3 not started.

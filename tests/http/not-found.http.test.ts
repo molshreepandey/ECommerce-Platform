@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { adminHost, getPage, storeHost, visibleMarkup } from './app-server';
+import { adminHost, getPage, placeholderAdminCookie, storeHost, visibleMarkup } from './app-server';
 
 const storeMarkers = ['Back to the store', 'Demo Store'];
 const adminMarkers = ['This admin page does not exist', 'Back to the dashboard'];
@@ -33,7 +33,7 @@ describe('unmatched URLs on the admin host', () => {
   it.each(['/no-such-page', '/orders/missing-order', '/store'])(
     '%s returns 404 with the admin not-found page rendered on the server',
     async (pathname) => {
-      const response = await getPage(adminHost, pathname);
+      const response = await getPage(adminHost, pathname, placeholderAdminCookie);
       const markup = visibleMarkup(response.text);
 
       expect(response.status).toBe(404);
@@ -47,13 +47,21 @@ describe('unmatched URLs on the admin host', () => {
 });
 
 describe('matched pages are unaffected', () => {
-  it('serves the store and admin home pages with 200', async () => {
+  it('serves the store home page and the admin sign-in page with 200', async () => {
     const storeHome = await getPage(storeHost, '/');
-    const adminHome = await getPage(adminHost, '/');
+    const adminSignIn = await getPage(adminHost, '/login');
     expect(storeHome.status).toBe(200);
     expect(visibleMarkup(storeHome.text)).toContain('<title>Demo Store</title>');
-    expect(adminHome.status).toBe(200);
-    expect(visibleMarkup(adminHome.text)).toContain('<title>Admin</title>');
+    expect(adminSignIn.status).toBe(200);
+    expect(visibleMarkup(adminSignIn.text)).toContain('<title>Sign in · Admin</title>');
+  });
+
+  it('sends a signed-out visitor on an unknown admin URL to sign-in instead of revealing a 404', async () => {
+    const response = await getPage(adminHost, '/no-such-page');
+    expect(response.status).toBe(307);
+    expect(response.headers['location']).toBe(
+      'http://admin.localhost:3100/login?next=%2Fno-such-page',
+    );
   });
 });
 

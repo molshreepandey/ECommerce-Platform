@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { adminHost, getPage, storeHost } from './app-server';
 
+const isDevelopmentServer = process.env['TEST_SERVER_MODE'] === 'development';
+
 const staticHeaders = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'strict-origin-when-cross-origin',
@@ -11,7 +13,8 @@ const staticHeaders = {
 describe('security headers', () => {
   it.each([
     ['store home page', storeHost, '/'],
-    ['admin home page', adminHost, '/'],
+    ['admin sign-in redirect', adminHost, '/'],
+    ['admin sign-in page', adminHost, '/login'],
     ['store 404 page', storeHost, '/no-such-page'],
     ['health API', storeHost, '/api/health'],
   ])('are present on the %s', async (_label, host, pathname) => {
@@ -22,7 +25,9 @@ describe('security headers', () => {
     const contentSecurityPolicy = String(response.headers['content-security-policy']);
     expect(contentSecurityPolicy).toContain("default-src 'self'");
     expect(contentSecurityPolicy).toContain("frame-ancestors 'none'");
-    expect(contentSecurityPolicy).not.toContain('unsafe-eval');
+    // next dev needs 'unsafe-eval' for React Refresh (TD-006); a production build must never send it.
+    if (isDevelopmentServer) expect(contentSecurityPolicy).toContain("'unsafe-eval'");
+    else expect(contentSecurityPolicy).not.toContain('unsafe-eval');
   });
 
   it('do not send HSTS for plain-http local origins', async () => {

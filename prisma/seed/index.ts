@@ -1,4 +1,6 @@
 import { seedCart } from './cart.seed';
+import { assertDemoCredentialsAllowed } from './demo-credentials';
+import { applyDemoPasswordHashes } from './demo-passwords.seed';
 import { seedCatalogue } from './catalogue.seed';
 import { seedCourierPartners } from './fulfilment.seed';
 import { seedIdentity } from './identity.seed';
@@ -12,9 +14,11 @@ import { seedStoreSettings } from './settings.seed';
 import { seedWarehouses } from './warehouses.seed';
 
 async function seedDatabase(): Promise<void> {
+  assertDemoCredentialsAllowed(process.env['APP_ENV']);
   const client = createSeedClient();
   try {
     const customerByKey = await seedIdentity(client);
+    await applyDemoPasswordHashes(client);
     await seedStoreSettings(client);
     const catalogue = await seedCatalogue(client);
     await seedMerchandising(client, catalogue.productIdBySlug);

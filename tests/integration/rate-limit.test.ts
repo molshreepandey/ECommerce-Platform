@@ -10,6 +10,8 @@ import {
 } from '@/lib/rate-limit/rate-limit';
 import type { RateLimitStore } from '@/lib/rate-limit/rate-limit.types';
 import { resolveWindow } from '@/lib/rate-limit/rate-limit-window';
+
+import { waitForFreshRateLimitWindow } from './support/rate-limit-window';
 import { postgresRateLimitStore } from '@/lib/rate-limit/rate-limit.repository';
 import {
   buildRateLimitRedisKey,
@@ -106,7 +108,8 @@ describe('Postgres rate limit store', () => {
 
 describe('enforceRateLimit with the test configuration', () => {
   it('throws RateLimitExceededError with Retry-After once the configured limit is used up', async () => {
-    const { maxRequests } = getConfig().rateLimits['staff-login'];
+    const { maxRequests, windowSeconds } = getConfig().rateLimits['staff-login'];
+    await waitForFreshRateLimitWindow(windowSeconds);
     for (let attempt = 0; attempt < maxRequests; attempt += 1) {
       await enforceRateLimit({ action: 'staff-login', identifier: 'staff@example.test' });
     }

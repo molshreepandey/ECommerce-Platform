@@ -65,6 +65,12 @@ describe('committed configuration files', () => {
     expect(config.surfaces.admin.publicOrigin).toMatch(/^https:\/\//);
     expect(config.security.strictTransportSecurityMaxAgeSeconds).toBeGreaterThan(0);
     expect(['debug', 'trace']).not.toContain(config.logging.level);
+    expect(config.authentication.secureCookies).toBe(true);
+    expect(config.authentication.demoAccountsAllowed).toBe(false);
+  });
+
+  it.each(['development', 'test'])('config.%s.json trusts no proxy headers', (name) => {
+    expect(readCommittedConfig(name).authentication.trustedProxyHopCount).toBe(0);
   });
 
   it('production uses a one-year HSTS max-age', () => {
@@ -91,6 +97,12 @@ describe('parseConfig validation', () => {
     expect(configIssues(config).join('\n')).toMatch(/must not share a host/);
   });
 
+  it('refuses password hashing below the OWASP Argon2id minimum', () => {
+    const config = cloneDevelopmentConfig();
+    config.authentication.passwordHashing.memoryCostKib = 4096;
+    expect(configIssues(config).join('\n')).toMatch(/passwordHashing\.memoryCostKib/);
+  });
+
   it('rejects an empty host list for a surface', () => {
     const config = cloneDevelopmentConfig();
     config.surfaces.store.hosts = [];
@@ -114,6 +126,46 @@ describe('parseConfig validation', () => {
     const config = cloneDevelopmentConfig();
     config.security.contentSecurityPolicy.imageSources = ['http://insecure.example.com'];
     expect(configIssues(config).join('\n')).toMatch(/imageSources/);
+  });
+
+  it('requires trustedProxyHopCount', () => {
+    const config = cloneDevelopmentConfig();
+    const authenticationWithoutHopCount = Object.fromEntries(
+      Object.entries(config.authentication).filter(([key]) => key !== 'trustedProxyHopCount'),
+    );
+    expect(
+      configIssues({ ...config, authentication: authenticationWithoutHopCount }).join('\n'),
+    ).toMatch(/authentication\.trustedProxyHopCount/);
+  });
+
+  it.each([-1, 1.5, 6, '1', true, null])('rejects trustedProxyHopCount %j', (hopCount) => {
+    const config = cloneDevelopmentConfig();
+    expect(
+      configIssues({
+        ...config,
+        authentication: { ...config.authentication, trustedProxyHopCount: hopCount },
+      }).join('\n'),
+    ).toMatch(/authentication\.trustedProxyHopCount/);
+  });
+
+  it.each([0, 1, 5])('accepts trustedProxyHopCount %j', (hopCount) => {
+    const config = cloneDevelopmentConfig();
+    expect(() =>
+      parseConfig('inline.json', {
+        ...config,
+        authentication: { ...config.authentication, trustedProxyHopCount: hopCount },
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects the retired trustProxyHeaders setting', () => {
+    const config = cloneDevelopmentConfig();
+    expect(
+      configIssues({
+        ...config,
+        authentication: { ...config.authentication, trustProxyHeaders: true },
+      }).join('\n'),
+    ).toMatch(/trustProxyHeaders/);
   });
 
   it('rejects a missing rate-limit policy', () => {

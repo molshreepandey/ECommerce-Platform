@@ -54,5 +54,17 @@
       "scriptSources": [],
       "frameSources": []
     }
+  },
+  "authentication": {
+    "customerSessionTtlDays": 30,
+    "staffSessionTtlHours": 12,
+    "secureCookies": false,
+    "trustedProxyHopCount": 0,
+    "demoAccountsAllowed": true,
+    "passwordHashing": {
+      "memoryCostKib": 19456,
+      "timeCost": 2,
+      "parallelism": 1
+    }
   }
 }

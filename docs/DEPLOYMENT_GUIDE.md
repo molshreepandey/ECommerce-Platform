@@ -39,6 +39,15 @@ and prerendered page content. See TD-002 in `docs/TECHNICAL_DECISIONS.md`.
 ### Before the first hosted deployment (Wave 15)
 
 - Replace the `example.com` hosts and origins in `config.staging.json` and `config.production.json`.
+- **Deployment requirement (blocking, not yet done):** set `authentication.trustedProxyHopCount` from
+  evidence about the real hosting topology (TD-015, L4). The committed staging and production files ship
+  with `0` (no proxy trusted). That is a safe placeholder, **not** a finished production configuration:
+  until it is set, rate limits have no client IP (one shared registration bucket, per-email sign-in
+  limits) and audit rows have no IP address. Do not go live until this step and its check are recorded.
+  - Count only proxies you control or that the platform guarantees, between the internet and the app.
+  - Check the platform's documentation on whether it appends to or overwrites `X-Forwarded-For`.
+  - After deploying, send a sign-in with a forged `X-Forwarded-For: 198.51.100.1` and confirm the audit
+    row or logs show your real address, not the forged one. Record the result in the journal.
 - Provide managed Postgres, Redis (TLS: `rediss://`) and Elasticsearch (or rely on the Postgres search
   fallback) on free tiers only.
 - Never reuse the local development credentials.
