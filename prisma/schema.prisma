@@ -78,6 +78,7 @@ enum InventoryMovementType {
   ADJUSTMENT
   TRANSFER_OUT
   TRANSFER_IN
+  RECEIPT
 }
 
 enum DiscountType {
@@ -206,9 +207,10 @@ model StaffUser {
   createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime        @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  roles                 StaffUserRole[]
-  decidedReturnRequests ReturnRequest[]
-  recordedRefunds       Refund[]
+  roles                   StaffUserRole[]
+  decidedReturnRequests   ReturnRequest[]
+  recordedRefunds         Refund[]
+  inventoryChangeRequests InventoryChangeRequest[]
 
   @@map("staff_users")
 }
@@ -596,6 +598,7 @@ model InventoryLevel {
 
   @@id([variantId, warehouseId])
   @@index([warehouseId])
+  @@index([warehouseId, variantId], map: "inventory_levels_low_stock_idx", where: raw("available_quantity <= low_stock_threshold AND low_stock_threshold > 0"))
   @@map("inventory_levels")
 }
 
@@ -617,9 +620,27 @@ model InventoryMovement {
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
   warehouse Warehouse      @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
 
-  @@index([variantId, createdAt(sort: Desc)])
-  @@index([warehouseId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([variantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([warehouseId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([movementType, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([referenceType, referenceId])
   @@map("inventory_movements")
+}
+
+// One row per idempotent stock request from a staff member; its movements point back to it through
+// reference_type 'inventory_change_request' and reference_id.
+model InventoryChangeRequest {
+  id                 String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  staffUserId        String   @map("staff_user_id") @db.Uuid
+  idempotencyKey     String   @map("idempotency_key")
+  requestFingerprint String   @map("request_fingerprint") @db.Char(64)
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Restrict)
+
+  @@unique([staffUserId, idempotencyKey])
+  @@map("inventory_change_requests")
 }
 
 // ───────────────────────────── cart ─────────────────────────────

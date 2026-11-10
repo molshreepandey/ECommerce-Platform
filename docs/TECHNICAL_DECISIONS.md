@@ -436,3 +436,69 @@ Migration `20261110093000_catalogue_integrity` (additive). Reverse script:
 - **Prefix queries and slug characters.** Subtree queries use `path LIKE $path || '%'`. Category slugs
   allow only `a-z`, `0-9` and `-` (API schema and `slugFromName`), so `_` and `%` never reach a path; the
   table has no database CHECK on the format yet (L34).
+
+## TD-018 Inventory ledger rules and idempotent stock requests (Wave 5, step 1)
+
+- **Two migrations.** `20261110150000_inventory_receipt_movement_type` adds `RECEIPT`;
+  `20261110150100_inventory_ledger_integrity` adds the CHECKs, indexes and the request table. Postgres cannot
+  use a new enum value in the transaction that adds it, and the sign CHECK uses `RECEIPT`.
+- **Rollback scripts** (`prisma/rollbacks/*.down.sql`; ledger first, then the type). The only supported
+  way to run them is `psql -d <db> -v expected_database=<db> < script` (no `-1`). Each script sets
+  `ON_ERROR_STOP`, refuses to start without `expected_database`, opens its own transaction, checks
+  `current_database()` against `expected_database`, checks that its migration is applied, keeps its data
+  guards (no stock requests; no RECEIPT rows; ledger rolled back before the type) and commits only at the
+  end. Any error stops psql before `COMMIT`, so PostgreSQL rolls the whole transaction back: a failure
+  injected at the last statement (after 14 DDL statements in the ledger script, after the type rebuild in
+  the type script) left the schema byte-identical. Once a RECEIPT movement exists the type can no longer be
+  rolled back; fixes from then on are forward migrations.
+- **No data change.** All 348 levels, 405 movements and 10 reserved units are untouched. The existing ledger
+  convention is kept and was verified to replay exactly: DISPATCH lowers on hand and reserved by its delta;
+  RESERVE and RELEASE change reserved; every other type changes on hand. "Before" values are derived from
+  "after" and the delta by that convention, so no column or backfill is needed.
+- **Idempotency (owner decision: relative adjustments carry no expected quantity, but a retry must not
+  apply twice).** Every staff stock request carries an `Idempotency-Key` (16–100 of `A-Z a-z 0-9 _ -`; the
+  UI sends a new UUID per user action and reuses it on retry). The service inserts
+  `inventory_change_requests(staff_user_id, idempotency_key, request_fingerprint)` with
+  `ON CONFLICT DO NOTHING` in the same transaction as the stock change, and its movements point back through
+  `reference_type = 'inventory_change_request'` and `reference_id`.
+  - **Fingerprint:** SHA-256 (lower-case hex) of the canonical JSON of the operation type (for example
+    `ADJUST_DELTA`, `ADJUST_SET`, `RECEIPT`) together with the request after Zod validation and
+    normalisation (trimmed strings, keys in a fixed order), never the raw body. The operation type is part
+    of it, so one key reused on a different operation is a different payload, and harmless differences in
+    the raw JSON (key order, whitespace) are not.
+  - Same staff member, same key, same fingerprint: the original result is returned and nothing is applied
+    again. A concurrent duplicate waits on the unique index until the first commits, then finds its row
+    (tested with two connections: PostgreSQL reports the second blocked by the first).
+  - Same key, different fingerprint: 422 `IDEMPOTENCY_KEY_REUSED`.
+  - A different key is a different request, so two legitimate identical adjustments both apply.
+  - A failed request rolls back its row too, so a retry with the same key runs again (tested: a CHECK
+    failure and a guarded update matching no row both leave no request, movement or stock change). If the
+    first of two concurrent duplicates rolls back, the waiting one becomes the first (tested).
+  - **No expiry or clean-up.** Request rows are kept indefinitely, like the ledger they explain; a key
+    reused at any later time replays (same payload) or gets 422 (different payload). Retention or clean-up
+    would be a separate, approved change.
+  - Keys are scoped per staff member, so one person can never replay another's result.
+  - SET adjustments still need the expected previous on-hand quantity (409 `STALE_STOCK` otherwise).
+  - Chosen over a column on `inventory_movements` because one request can write several ledger rows and the
+    fingerprint belongs to the request, not to each row.
+- **Ledger paging.** Indexes on `(created_at DESC, id DESC)`, alone and after `variant_id`, `warehouse_id`
+  and `movement_type`; `(reference_type, reference_id)` for replays and shipment look-ups; a partial index
+  for low stock (`available_quantity <= low_stock_threshold AND low_stock_threshold > 0`). Seeded
+  timestamps are backdated whole minutes, so `id` order is not time order; cursors will be row ids resolved
+  to `(created_at, id)` in SQL, avoiding the millisecond/microsecond loss found in Wave 3.
+- **Direction rule for future types.** `inventory_movements_quantity_delta_sign_check` lists every movement
+  type with its direction and ends `ELSE false`. A migration that adds a movement type must update this
+  CHECK in the same change (in a second migration after the `ADD VALUE`, as here); otherwise every insert of
+  the new type fails.
+- **Reason rule.** ADJUSTMENT and RECEIPT need a reason containing at least one letter or digit
+  (`reason ~ '[[:alnum:]]'`): whitespace of every kind (tab, newline, non-breaking, ideographic and
+  zero-width spaces) and punctuation-only text are refused, while reasons in any script are accepted. This
+  depends on the database `LC_CTYPE`; development, test and CI (`postgres:18.6`) all use `en_US.utf8`, and
+  a test with a Hindi reason would fail under a `C` locale.
+- **No STAFF ⇒ actor CHECK.** 25 seeded STAFF movements have no `actor_id`; Wave 5 services always record
+  the actor.
+- **TypedSQL deviation (owner decision).** Plan rule 7 asks for TypedSQL on hot paths. It needs a migrated
+  database when the client is generated, but CI generates during `npm ci` (postinstall) and type-checks
+  before `db:deploy`. Inventory queries therefore keep the existing pattern: parameterised `$queryRaw`
+  tagged templates whose rows are parsed with Zod at the repository boundary. Safety is the same (no string
+  concatenation, typed results); revisit if CI is reordered.

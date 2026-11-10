@@ -1,76 +1,99 @@
 # Session handoff
 
-Updated 2026-11-10 and committed with Wave 4. Resume from exactly this state. Do **not** recreate the
-project, reset any database, commit, push or start Wave 5 without the owner's explicit approval.
+Updated 2026-11-10 during Wave 5 step 1. Resume from exactly this state. Do **not** recreate the project,
+reset any database, commit, push or start the Wave 5 inventory services, APIs or UI without the owner's
+explicit approval.
 
-## Latest: Wave 4, category tree, tagging and product groups (2026-11-10, committed locally, not pushed)
+## Latest: Wave 5 step 1, inventory ledger migration foundation (2026-11-10, staged locally, not committed or pushed)
 
-- Committed locally as "Wave 4: category tree, tagging and product groups" (the commit containing this
-  file), on top of `800dd41`: 13 modified and 38 new code and test files, plus these docs (journal: "Wave
-  4"; decisions: TD-017; API: `docs/API_DOCUMENTATION.md`; walkthrough: `docs/walkthroughs/wave-4.md`;
-  limitations L30–L34). Not pushed.
+- Migrations `20261110150000_inventory_receipt_movement_type` and `20261110150100_inventory_ledger_integrity`
+  (RECEIPT movement type, ledger CHECKs and indexes, low-stock index, `inventory_change_requests` for
+  idempotent staff stock requests; decisions: TD-018).
+- Tested on `ecommerce_test` (apply, hardened rollback, injected-failure checks, re-apply, no drift) and,
+  with the owner's approval, **applied to development** with `npm run db:deploy` at 17:49:25 UTC (journal:
+  "Wave 5 step 2"). Development and test each record **five migrations**.
+- **Development fingerprint is now `9cec751c29cab1faab002a9308e23887`** (47 tables, 1,629 rows). The previous
+  `04adce0841b9013d69f13b043ae4a245` is the state before these migrations; only the two `_prisma_migrations`
+  rows and the empty `inventory_change_requests` table were added, and every existing table is identical.
+- Backup before the migration (restore-verified):
+  `~/ecommerce-backups/20261110-inventory-ledger/ecommerce-dev-before-inventory-ledger.dump` (sha256
+  `62ff93c1…`), with the baselines and the full command log next to it.
+- Rollback scripts: `prisma/rollbacks/20261110150100_…down.sql` first, then `…150000_…down.sql`, run only as
+  `psql -d <db> -v expected_database=<db> < script` (no `-1`).
+- At the time of writing, the migration foundation (migrations, rollback scripts, the constraint test file,
+  schema and these docs) is **staged locally, not committed and not pushed**.
+- Next: owner review and approval of the commit; then, with separate approval, the Wave 5 inventory
+  services, APIs and UI.
+
+## Wave 4, category tree, tagging and product groups (2026-11-10, commit `e0c3895`, pushed)
+
+- Committed as "Wave 4: category tree, tagging and product groups" (`e0c3895`), on top of `800dd41`: 13
+  modified and 38 new code and test files, plus these docs (journal: "Wave 4"; decisions: TD-017; API:
+  `docs/API_DOCUMENTATION.md`; walkthrough: `docs/walkthroughs/wave-4.md`; limitations L30–L34). Pushed to
+  `origin/main` on 2026-11-10 (fast-forward `d7e3a0e..e0c3895`, which also published Waves 2A–3).
 - **L31 is mandatory before Wave 8 order implementation:** decide and add category / group snapshots on
   order lines (or an explicit "current category" rule). L29 (browser access-denied test) remains open.
 - No migration: the existing `categories` and `product_groups` schema fits.
 - Tests: 270 unit, 215 integration, 56 HTTP, 52 browser; format, lint, typecheck and build pass.
-- Development fingerprint still `04adce0841b9013d69f13b043ae4a245`; 0 development Redis keys; test servers
-  stopped.
-- Next: owner review of Wave 4. Commit only with approval (no AI attribution); Wave 5 needs approval.
+- Development fingerprint at the Wave 4 commit: `04adce0841b9013d69f13b043ae4a245`; 0 development Redis
+  keys; test servers stopped.
+- The owner approved Wave 4 and its push; Wave 5 has started (above).
 
-## Latest: Wave 3 step 4, catalogue admin API and UI (2026-11-10, committed locally, not pushed)
+## Wave 3 step 4, catalogue admin API and UI (2026-11-10, commit `800dd41`, pushed with Wave 4)
 
 - 19 admin API route files, 6 admin pages and the `CatalogueAdmin` components (journal: "Wave 3 step 4";
   API: `docs/API_DOCUMENTATION.md`; walkthrough: `docs/walkthroughs/wave-3.md`).
 - Tests: 258 unit, 184 integration, 51 HTTP, 48 browser; format, lint, typecheck and build pass.
 - Development fingerprint still `04adce0841b9013d69f13b043ae4a245`.
 - Committed locally as "Wave 3 step 4: catalogue admin API, admin pages, HTTP and browser tests" (the
-  commit containing this file). Not pushed. Wave 4 needs the owner's approval.
+  commit containing this file). Pushed to GitHub on 2026-11-10 together with Wave 4.
 
-## Latest: Wave 3 step 3, catalogue services (2026-11-10, committed locally, not pushed)
+## Wave 3 step 3, catalogue services (2026-11-10, commit `8b8ad00`, pushed with Wave 4)
 
 - Service layer for D9–D15 in `src/modules/catalogue/` (journal: "Wave 3 step 3"; decisions: TD-016
   implementation notes). No HTTP routes or admin pages yet (L24).
 - Tests: 258 unit, 184 integration, 40 HTTP, 40 browser; format, lint, typecheck and build pass.
 - Development fingerprint still `04adce0841b9013d69f13b043ae4a245`; nothing written to development.
 - Committed locally as "Wave 3 step 3: catalogue services (types, attributes, brands, products,
-  variants, images, lifecycle)" (the commit containing this file). Not pushed.
+  variants, images, lifecycle)" (the commit containing this file). Pushed to GitHub on 2026-11-10 together
+  with Wave 4.
 - Next (approved): admin route handlers, HTTP tests, admin pages and E2E. Not to be committed without review.
 
-## Latest: Wave 3 steps 1 and 2 (2026-11-10, committed locally, not pushed)
+## Wave 3 steps 1 and 2 (2026-11-10, commit `24563ed`, pushed with Wave 4)
 
 - Migration `20261110093000_catalogue_integrity` is tested on `ecommerce_test` (apply, exact rollback with
   `prisma/rollbacks/…down.sql`, re-apply, no drift, full seed, 109 / 109 integration tests) and, with the
   owner's approval, **applied to development** with `npm run db:deploy` (journal: "Wave 3 step 2").
-- **Development fingerprint is now `04adce0841b9013d69f13b043ae4a245`.** The old `3a6b72f9…` is the state
-  before the migration. The only differences are the `products.version` column (0 everywhere) and one
-  `_prisma_migrations` row; every other table is identical.
+- **Development fingerprint became `04adce0841b9013d69f13b043ae4a245`** with this migration (superseded by
+  `9cec751c…` in Wave 5). The old `3a6b72f9…` is the state before the migration. The only differences are
+  the `products.version` column (0 everywhere) and one `_prisma_migrations` row; every other table is
+  identical.
 - **Backup of development before the migration (restore-verified):**
   `~/ecommerce-backups/20261110-catalogue-integrity/ecommerce-dev-before-catalogue-integrity.dump`
   (sha256 `5bfa8613…`), with the baseline files next to it.
 - Committed locally as "Wave 3 steps 1-2: catalogue integrity migration (test and development)" (the
-  commit that contains this file), on top of Wave 2B `f2c40ab`. Not pushed; pushing needs approval.
+  commit that contains this file), on top of Wave 2B `f2c40ab`. Pushed to GitHub on 2026-11-10 together
+  with Wave 4.
 - Wave 3 services, APIs and pages are not started; they need the owner's approval.
 
 ## Where things stand
 
-- **Wave 2B is finished and verified, including final check 7** (client IP behind proxies; details in
-  `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7"). The owner approved check 7 and the commit.
-- **Wave 2B is committed locally** as "Wave 2B: accounts, sessions, roles, addresses and audit trail" (the
-  commit that contains this file). It is **not pushed**; pushing needs separate approval.
-- **Nothing pushed. Wave 3 not started.** The owner approved the Wave 3 design in principle (with
-  decisions on `products.version`, immutable SKUs and option values, slug editable only in DRAFT,
-  read-only category/tagging/group/stock filters, and audited hard deletion of images). Before Wave 3
-  implementation the owner asked for a read-only confirmation of database relationships, foreign-key
-  behaviour, migration safety and compatibility with the inventory, cart and order modules.
+- **Waves 1–4 are finished, committed and pushed.** `origin/main` is `e0c3895` (Wave 4). Wave 2B includes
+  final check 7 (client IP behind proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
+- **Wave 5 is in progress:** step 1 (migration foundation) is applied to test and development and staged
+  locally, not committed or pushed. Inventory services, APIs and UI are not started.
 
-## Git state
+## Git state (2026-11-10, Wave 5 step 1)
 
-| Item                      | Value                                                                              |
-| ------------------------- | ---------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                             |
-| HEAD                      | the Wave 2B commit (message above), parent `6d60892` (Wave 2A verification record) |
-| Relative to `origin/main` | ahead 3 (`6863ad2`, `6d60892` for Wave 2A, then Wave 2B), none pushed              |
-| Working tree              | clean right after the commit                                                       |
+| Item                      | Value                                                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `main`                                                                                                                       |
+| HEAD                      | `e0c3895` (Wave 4), parent `800dd41`                                                                                         |
+| Relative to `origin/main` | up to date (0 ahead); pushed on 2026-11-10 as a fast-forward `d7e3a0e..e0c3895`                                              |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4) |
+| Working tree              | the Wave 5 step 1 migration foundation staged, not committed                                                                 |
+
+### Wave 2B commit contents (historical record, `f2c40ab`)
 
 The Wave 2B commit contains 138 files: 32 modified and 106 new, 0 deleted.
 
@@ -149,12 +172,14 @@ After the regression only documentation changed (journal, traceability, testing 
 
 ## Databases and services
 
-- **Development database `ecommerce`:** fingerprint `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627
-  rows) since the catalogue integrity migration on 2026-11-10.
+- **Development database `ecommerce`:** fingerprint `9cec751c29cab1faab002a9308e23887` (47 tables, 1,629
+  rows) since the Wave 5 inventory ledger migrations on 2026-11-10; five migrations recorded.
+  - Before those migrations: `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627 rows), since the catalogue
+    integrity migration on 2026-11-10.
   - Before that migration: `3a6b72f9d53ed06b19f3f136d24b84a6` (unchanged from Wave 2B Step B until then).
   - Wave 2B baseline: `84956ffb57af5da58ba41b5ea154611d`.
 - **Test database `ecommerce_test`:** reset by `npm run start:test` and by the integration tests. Holds
-  only test data.
+  only test data; five migrations recorded.
 - **Redis:** 0 development keys (test rate-limit counters expire within a minute).
 - **Containers:** postgres 18.6, elasticsearch 9.5.5 and redis 8.10.3. Their restart policy is `no`, so
   after a reboot they must be started with `docker start` on the three existing containers (never
@@ -172,7 +197,7 @@ from pg_class c join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind = 'r'
 order by 1;
 SQL
-# expected: 04adce0841b9013d69f13b043ae4a245
+# expected: 9cec751c29cab1faab002a9308e23887
 ```
 
 If Docker is not running, this prints `d41d8cd98f00b204e9800998ecf8427e` (the md5 of empty input), which is
@@ -180,12 +205,12 @@ not a database result.
 
 ## Pending items
 
-| #   | Item                                                 | Status                     |
-| --- | ---------------------------------------------------- | -------------------------- |
-| 1   | Wave 3 steps 1-2 (migration on test and development) | done and committed locally |
-| 2   | Apply the migration to the development database      | done (Wave 3 step 2)       |
-| 3   | Wave 3 services, APIs and pages                      | not approved yet           |
-| 4   | Push to GitHub                                       | not approved               |
+| #   | Item                                             | Status                                          |
+| --- | ------------------------------------------------ | ----------------------------------------------- |
+| 1   | Wave 5 step 1 migrations on test and development | done (applied to development 17:49:25 UTC)      |
+| 2   | Commit of the Wave 5 step 1 migration foundation | staged; awaiting the owner's approval           |
+| 3   | Wave 5 inventory services, APIs and UI           | not approved yet                                |
+| 4   | Push to GitHub                                   | Waves 1–4 pushed (`e0c3895`); Wave 5 not pushed |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
@@ -195,11 +220,11 @@ Deployment requirement (not a finished production setting): staging and producti
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD is the Wave 3 steps 1-2 commit (parent `f2c40ab`); the working tree is
-   clean; the development fingerprint is `04adce08…`; both databases have 3 migrations; three healthy
-   containers.
-2. Wait for the owner's approval before starting the Wave 3 catalogue services. Do not push, seed
-   development, or reset or truncate any database without explicit approval.
+1. Check that nothing changed: HEAD is `e0c3895` and equals `origin/main`; the Wave 5 step 1 migration
+   foundation is staged (or, once approved, committed); the development fingerprint is `9cec751c…`; both
+   databases record five migrations; three healthy containers.
+2. Wait for the owner's approval before committing, pushing, or starting the Wave 5 inventory services,
+   APIs and UI. Do not seed development, or reset or truncate any database without explicit approval.
 
 ## Rules still in force
 

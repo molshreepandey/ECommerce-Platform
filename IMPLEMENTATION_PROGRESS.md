@@ -4,10 +4,21 @@ Spec: `~/Downloads/ECOMMERCE_PLATFORM_PLAN.md` (read-only). Waves follow plan se
 
 ## Waves
 
-- [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6` on `main`, on GitHub (private); CI result not yet verified)
-- [x] Wave 2A — Platform groundwork (approved by the owner on 2026-11-07; committed locally on `main`, not pushed; not yet tested by CI)
-- [ ] Wave 2B — Identity, access, audit (not started; waits for approval of Wave 2A)
-- [ ] Waves 3–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
+Current status (updated 2026-11-10). The dated headings of the journal entries below record the status when
+each entry was written; this list is the current status.
+
+- [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6`, push record `d7e3a0e`; on GitHub (private))
+- [x] Wave 2A — Platform groundwork (approved by the owner on 2026-11-07; commits `6863ad2`, `6d60892`; pushed to GitHub on 2026-11-10)
+- [x] Wave 2B — Identity, access, audit (commit `f2c40ab`; pushed to GitHub on 2026-11-10)
+- [x] Wave 3 — Modular catalogue (commits `24563ed`, `8b8ad00`, `800dd41`; pushed to GitHub on 2026-11-10)
+- [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10; `origin/main` is `e0c3895`)
+- [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: both migrations tested on
+      `ecommerce_test` and applied to development, which now records five migrations (development fingerprint
+      `9cec751c29cab1faab002a9308e23887`). Its files are staged locally, not committed or pushed. Inventory
+      services, APIs and UI are not started.
+- [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
+
+CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
 
 ## Environment decisions (2026-11-07)
 
@@ -1786,3 +1797,157 @@ open.
 Development fingerprint `04adce0841b9013d69f13b043ae4a245` (46 tables) after all tests, unchanged; 0
 development Redis keys. Destructive tests used only `ecommerce_test`. Test servers stopped; ports 3000, 3100
 and 3200 free.
+
+## Wave 5 step 1: inventory ledger migration on the test database (2026-11-10, done; awaiting owner review, not committed)
+
+Approved scope: the migration only, on `ecommerce_test` only. Not done, by instruction: nothing applied to
+development, no development seed, reset or truncate, no inventory services, no commit or push. Decisions
+recorded in TD-018 (idempotency design, TypedSQL deviation).
+
+### Changes
+
+| File                                                                | Change                                                                                                                                                                      |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prisma/schema.prisma`                                              | `RECEIPT` movement type; ledger indexes with an `id` tiebreaker; reference index; partial low-stock index; model `InventoryChangeRequest` (unique per staff member and key) |
+| `prisma/migrations/20261110150000_inventory_receipt_movement_type/` | `ALTER TYPE … ADD VALUE 'RECEIPT'` (own migration: a new enum value cannot be used in the transaction that adds it)                                                         |
+| `prisma/migrations/20261110150100_inventory_ledger_integrity/`      | Prisma-generated DDL (from `migrate diff` against the test database; replacement indexes created before the old ones are dropped) + 5 hand-written CHECKs                   |
+| `prisma/rollbacks/*.down.sql` (2)                                   | reverse scripts; the type rollback refuses to run before the ledger rollback, while RECEIPT rows exist, and the ledger rollback refuses while stock requests exist          |
+| `tests/integration/inventory-ledger-constraints.test.ts`            | new: 11 tests                                                                                                                                                               |
+| Docs                                                                | TD-018; `DATABASE_DESIGN.md` constraints; `er-diagram.svg` regenerated                                                                                                      |
+
+Destructive statements: only the two replaced ledger indexes (`DROP INDEX`), each after its wider
+replacement exists.
+
+### Test database evidence
+
+Database targets (from the session command log; URLs redacted): `DATABASE_URL` is
+`postgresql://ecommerce:***@localhost:5433/ecommerce` (development) and `TEST_DATABASE_URL` is
+`…/ecommerce_test`. Every `prisma migrate diff/deploy/status` and `db:seed` ran through the scratchpad
+wrapper `with-test-db.sh`, which runs `assertTestDatabaseUrl` first (`set -e`) and only then sets
+`DATABASE_URL` to the test URL; each TRUNCATE, rollback and rollback-guard check ran as
+`psql -d ecommerce_test`, with the database named literally. Development was only read: schema snapshots and
+natural-key comparisons with `default_transaction_read_only=on`, the SELECT-only fingerprint script, and a
+read-only `prisma migrate status`.
+
+| Step                                                                                    | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Baseline                                                                                | test schema identical to development (1,075 lines incl. enums); 47 CHECK, 55 FK, 137 indexes, 3 migrations. **First attempt to empty the test tables failed** (15:14 UTC): the project helper `truncateAllTestTables` could not run from `tsx -e` (top-level await unsupported, then `InvalidEnvironmentError` because the full app environment was missing), and the `db:seed` chained after it in the same command still ran through the guarded wrapper into `ecommerce_test`, on top of rows left by the HTTP and browser runs (16 products, 6 staff, no stock). That output was piped through `tail -3`, so its "guard passed" line was not shown. Development was unaffected (405 movements, fingerprint unchanged). Then (15:15 UTC) the test tables were emptied with `psql -d ecommerce_test` and a `DO` block that aborts unless `current_database() = 'ecommerce_test'`, and seeded again; every comparison below starts from that clean seed |
+| Seeded test data vs development                                                         | 802 natural-key lines identical (3 warehouses, 348 levels, 405 movements, 20 orders, 24 shipments, 2 cart items); timestamps differ by one constant 3 days because the seed dates rows relative to the day it runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `prisma migrate deploy`                                                                 | both migrations applied, exit 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| After apply                                                                             | 52 CHECK (+5), 56 FK (+1), 143 indexes (+8, −2); schema delta exactly the planned objects; every constraint validated; `migrate status` up to date; `migrate diff --exit-code` 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Data after apply                                                                        | the 802 lines identical including timestamps; every existing table's content hash identical (only `_prisma_migrations` +2 rows and the new empty table); 348 levels, 4,677 on hand, 10 reserved, 4,667 available, 405 movements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Rollback guards                                                                         | type rollback first → refused; ledger rollback with a request row present → refused; type rollback with a RECEIPT row present → refused (each inside a transaction that was rolled back; nothing kept)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Rollback (ledger, then type; `psql -d ecommerce_test -v ON_ERROR_STOP=1 -1`, 15:20 UTC) | exit 0; schema identical to the baseline (enums included); data and every table hash, `_prisma_migrations` included, identical to the baseline. The re-apply below (15:20:38 UTC, guarded wrapper) is recorded in `ecommerce_test._prisma_migrations` (`started_at` 15:20:40); development has no rows for these migrations. These scripts were later hardened (next section)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Re-apply                                                                                | exit 0; schema identical to the first application; drift exit 0; data identical                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Seed on the migrated schema                                                             | exit 0; same 802 lines including timestamps; still identical to development by natural keys                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+### Tests (Node v26.13.0)
+
+| Command                                                               | Result              |
+| --------------------------------------------------------------------- | ------------------- |
+| `format:check`, `prisma format --check`, `lint`, `typecheck`, `build` | all exit 0          |
+| `npm test`                                                            | 270 / 270           |
+| `npm run test:integration`                                            | **226 / 226** (+11) |
+| `npm run test:http` (production build, migrated test database)        | 56 / 56             |
+| `npm run test:e2e` (production build, migrated test database)         | 52 / 52             |
+
+The 11 new tests: migrations recorded, `RECEIPT` last in the enum, new indexes present and old ones gone, no
+unvalidated constraint; impossible "after" quantities refused; each type's direction enforced (wrong sign
+and 0 refused, right sign accepted); adjustments either way including 0; reason required for ADJUSTMENT and
+RECEIPT (null, empty, blank); one key per staff member while another member or a new key with the same
+content is accepted; malformed keys and fingerprints refused; 10 simultaneous inserts of one key keep
+exactly one row; 10 concurrent transactions using `ON CONFLICT DO NOTHING` all resolve to the same single
+request; unknown staff refused and a staff member with requests cannot be deleted; a request's movements
+are found through the reference columns.
+
+### Development database (not touched)
+
+Fingerprint `04adce0841b9013d69f13b043ae4a245` (unchanged); schema snapshot and the 802 inventory and order
+lines identical to the start of the step; still 3 migrations. `prisma migrate status` (read-only) lists the
+two new migrations as not yet applied; applying them needs the owner's separate approval. No runtime code
+uses the new objects yet. Test servers stopped; ports 3000, 3100 and 3200 free.
+
+## Wave 5 step 1 hardening: rollback scripts, reason rule, idempotency tests (2026-11-10, done; awaiting owner review, not committed)
+
+Owner-approved scope: harden both rollback scripts, refuse whitespace-only reasons, prove failure and
+overlap behaviour of idempotent requests, document the fingerprint, expiry and direction rules, correct this
+journal. Test database only; development not migrated, seeded, reset, truncated or modified. No services,
+APIs or UI.
+
+### Changes
+
+| File                                                                        | Change                                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prisma/rollbacks/20261110150100_inventory_ledger_integrity.down.sql`       | `\set ON_ERROR_STOP on`; refuses without `-v expected_database`; explicit `BEGIN`/`COMMIT`; `current_database()` must equal `expected_database`; refuses if the migration is not applied; keeps the "no stock requests" guard; `DROP … IF EXISTS` replaced by strict drops (a missing object aborts) |
+| `prisma/rollbacks/20261110150000_inventory_receipt_movement_type.down.sql`  | same hardening; keeps "ledger rolled back first" and "no RECEIPT rows" guards                                                                                                                                                                                                                        |
+| `prisma/migrations/20261110150100_inventory_ledger_integrity/migration.sql` | reason CHECK: `btrim(reason) <> ''` → `reason ~ '[[:alnum:]]'` (at least one letter or digit, any script)                                                                                                                                                                                            |
+| `tests/integration/inventory-ledger-constraints.test.ts`                    | reason test extended (14 refused values incl. tab, newline, CRLF, VT/FF, NBSP, ideographic, zero-width, BOM, punctuation; 5 accepted incl. Hindi and CJK); 4 new tests: forced overlap with commit, with different content, with rollback; failure rolls back the request                            |
+| Docs                                                                        | TD-018 (rollback method, fingerprint includes operation type, no expiry, direction rule for future types, reason rule and locale); `DATABASE_DESIGN.md` reason row; this journal (first truncate attempt and database targets)                                                                       |
+
+Why `[[:alnum:]]`: `[^[:space:]]` would still accept a non-breaking or zero-width space (PostgreSQL treats
+them as non-space). `[[:alnum:]]` refuses every whitespace and invisible variant and punctuation-only text,
+and accepts English, digits, Hindi, Tamil, accented Latin and CJK (checked read-only on the test database).
+It depends on `LC_CTYPE`, which is `en_US.utf8` on development, test and the CI image.
+
+### Test database evidence (all against `ecommerce_test`)
+
+| Step                                                | Result                                                                                                                                                                                                                                                           |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Starting point                                      | schema = the step 1 applied schema; data = the clean seed (802 natural-key lines)                                                                                                                                                                                |
+| Refusals                                            | ledger script without `expected_database` → refused, exit 3; with `expected_database=ecommerce` while connected to `ecommerce_test` → refused, exit 3; type script first → refused, exit 3; type script without the variable → refused, exit 3; schema unchanged |
+| Injected late failure, ledger script                | another session held its `_prisma_migrations` row `FOR UPDATE`; with `lock_timeout=1500ms` the final `DELETE` failed after 14 DDL statements had run; exit 3; schema byte-identical to before                                                                    |
+| Ledger rollback (real)                              | exit 0, `COMMIT`                                                                                                                                                                                                                                                 |
+| Injected late failure, type script                  | the rename, new type, column change and drop of the old type all ran, then the final `DELETE` timed out; exit 3; schema byte-identical (RECEIPT still present, no leftover `…_with_receipt` type)                                                                |
+| Type rollback (real)                                | exit 0; schema identical to the pre-migration baseline (enums included); data identical; every data table hash identical; `_prisma_migrations` back to its 3 original rows (same hash)                                                                           |
+| Re-apply of the edited migrations (guarded wrapper) | both applied; up to date; drift exit 0; the only schema difference from step 1 is the reason CHECK (validated against the 405 seeded movements); data and every data table hash identical; recorded checksums match the files                                    |
+
+### Tests (Node v26.13.0, test database only)
+
+| Command                                                                      | Result                                               |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `vitest … inventory-ledger-constraints.test.ts database-constraints.test.ts` | 23 / 23 (15 ledger, 8 existing database constraints) |
+| idempotency group repeated 5 times                                           | 10 / 10 each run                                     |
+| `tsc --noEmit`, `eslint` on the test file, `prettier`                        | exit 0                                               |
+
+The overlap tests use two connections: the first inserts the request and holds its transaction open; the
+second starts only then, and a third connection polls `pg_blocking_pids` until PostgreSQL reports the second
+blocked by the first, before the first is released. Commit: the second inserts nothing and finds the first
+request (same id; with different content it sees the stored fingerprint, the basis for 422). Rollback: the
+second becomes the only request. The failure test inserts a request and a referencing movement, then hits
+the stock CHECK; and inserts a request, then a guarded update matches no row and the service throws; both
+leave no request, movement or stock change, and a retry with the same key then succeeds.
+
+### Development database (not touched)
+
+Read-only check at the end of this step: fingerprint `04adce0841b9013d69f13b043ae4a245` (unchanged); schema snapshot and
+the 802 inventory and order lines identical to the start of step 1; still 3 migrations. No test server was
+started in this step.
+
+## Wave 5 step 2: inventory ledger migrations on the development database (2026-11-10, done; awaiting owner review, not committed)
+
+**Summary.** The development migration is complete. Fingerprint before: `04adce0841b9013d69f13b043ae4a245`;
+after: `9cec751c29cab1faab002a9308e23887`. Development now has five migrations applied (`init`,
+`identity_constraints`, `catalogue_integrity`, `inventory_receipt_movement_type`,
+`inventory_ledger_integrity`). No unexpected data changes: every existing business table is identical; only
+the two new `_prisma_migrations` rows and the new, empty `inventory_change_requests` table were added.
+
+Owner-approved apply of `20261110150000_inventory_receipt_movement_type` and
+`20261110150100_inventory_ledger_integrity` to `ecommerce`, with the Wave 3 safeguards. Not done, by
+instruction: no seed, reset, truncate, rollback or restore; no business-data change; no services, APIs or UI;
+no commit or push. Evidence and the full command log: `~/ecommerce-backups/20261110-inventory-ledger/`
+(`apply-command-log.txt`).
+
+| Safeguard                          | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Target                             | `DATABASE_URL` → `localhost:5433/ecommerce` (OrbStack → container `ecommerce-platform-postgres-1`); the same server identifier (`7705359071680872490`) through the app URL and `docker exec`; no shell override of `DATABASE_URL` or `APP_ENV`; 0 other sessions; no app server                                                                                                                                                                                                                                                                                                       |
+| Backup (preparation, 17:35:57 UTC) | `ecommerce-dev-before-inventory-ledger.dump`, `pg_dump` 18.6 custom format, 196,008 bytes, mode 600, sha256 `62ff93c1878299cf82d76194de5ecca29ddeac354fc8887105135b0d3db25a30` (re-checked OK before applying). Restore verified into a throwaway `ecommerce_restore_check` (fingerprint, 46 tables, schema, 802 + 768 natural-key lines and migration rows identical), then dropped                                                                                                                                                                                                  |
+| Preflight (read-only)              | 0 violations of each new CHECK over the 405 movements; no name collisions; RECEIPT absent; replaced indexes present; `en_US.utf8`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Before                             | fingerprint `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627 rows), per-table identical to the preparation baseline; exactly the two migrations pending; file checksums `bfe5ded…` and `00ef855…` equal the tested ones                                                                                                                                                                                                                                                                                                                                                           |
+| Apply                              | `npm run db:deploy` (`prisma migrate deploy`), both applied 17:49:25 UTC, exit 0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Status and drift                   | `migrate status`: up to date (5 migrations); `migrate diff --exit-code`: no difference; all 6 new constraints validated; 0 unvalidated constraints                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Schema                             | the change (38 lines added, 3 removed: old enum list and the two replaced indexes) is identical to the one tested on `ecommerce_test`; the development schema is now identical to the test schema                                                                                                                                                                                                                                                                                                                                                                                     |
+| Data                               | 45 of 46 existing tables identical (row count and content hash), including stock levels, movements, orders, order lines, shipments, shipment lines, carts, cart lines, sessions and audit logs. Only `_prisma_migrations` changed (3 → 5 rows; the 3 earlier rows byte-identical); new table `inventory_change_requests` with 0 rows. 802 inventory and order lines and 768 catalogue lines identical; all 19 baseline counts identical (348 stock rows, 4,677 on hand, 10 reserved, 405 movements, 20 orders, 32 order lines, 24 shipments, 32 shipment lines, 1 cart, 2 cart lines) |
+| Stop conditions                    | none hit                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+**New development fingerprint baseline:** `9cec751c29cab1faab002a9308e23887` (47 tables) from now on. The
+previous `04adce08…` is the state before these migrations.
