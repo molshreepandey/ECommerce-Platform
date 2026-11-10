@@ -7,6 +7,14 @@ export type AdminNavigationEntry = AdminNavigationItem &
 // Later waves add sections here with the permission each one needs.
 export const adminNavigationEntries: readonly AdminNavigationEntry[] = [
   { label: 'Dashboard', href: '/', icon: 'layout-dashboard' },
+  { label: 'Products', href: '/products', icon: 'package', requiredPermission: 'catalogue.read' },
+  {
+    label: 'Product types',
+    href: '/product-types',
+    icon: 'layers',
+    requiredPermission: 'catalogue.read',
+  },
+  { label: 'Brands', href: '/brands', icon: 'tag', requiredPermission: 'catalogue.read' },
 ];
 
 // Signed-out pages (not-found) show the entries every staff member can see.

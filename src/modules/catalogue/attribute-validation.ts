@@ -27,7 +27,7 @@ function allowedValuesOf(rule: AttributeRule): readonly string[] {
 
 function singleChoiceSchema(rule: AttributeRule) {
   const allowedValues = allowedValuesOf(rule);
-  return z.string().refine((value) => allowedValues.includes(value), {
+  return z.string({ error: 'Choose a value' }).refine((value) => allowedValues.includes(value), {
     message: `Choose one of: ${allowedValues.join(', ')}`,
   });
 }
@@ -35,7 +35,7 @@ function singleChoiceSchema(rule: AttributeRule) {
 function multipleChoiceSchema(rule: AttributeRule) {
   const allowedValues = allowedValuesOf(rule);
   return z
-    .array(z.string())
+    .array(z.string(), { error: 'Choose at least one value' })
     .min(1, 'Choose at least one value')
     .refine((values) => new Set(values).size === values.length, {
       message: 'Each value can be chosen only once',
@@ -48,7 +48,11 @@ function multipleChoiceSchema(rule: AttributeRule) {
 function valueSchema(rule: AttributeRule): z.ZodType<AttributeValue> {
   switch (rule.dataType) {
     case 'TEXT':
-      return z.string().trim().min(1, 'Enter a value').max(maximumTextAttributeLength);
+      return z
+        .string({ error: 'Enter a value' })
+        .trim()
+        .min(1, 'Enter a value')
+        .max(maximumTextAttributeLength);
     case 'NUMBER':
       return z.number({ error: 'Enter a number' });
     case 'BOOLEAN':

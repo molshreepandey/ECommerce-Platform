@@ -18,6 +18,7 @@ export type ApiFailure = Readonly<{
   code: string;
   message: string;
   fieldErrors: FieldErrors;
+  details: unknown;
 }>;
 
 export type ApiResult = { ok: true; data: unknown } | { ok: false; failure: ApiFailure };
@@ -27,6 +28,7 @@ const networkFailure: ApiFailure = {
   code: 'NETWORK_ERROR',
   message: 'We could not reach the server. Check your connection and try again.',
   fieldErrors: {},
+  details: null,
 };
 
 export function firstMessages(
@@ -45,6 +47,7 @@ async function failureFrom(response: Response): Promise<ApiFailure> {
       code: 'UNEXPECTED_RESPONSE',
       message: 'Something went wrong. Please try again.',
       fieldErrors: {},
+      details: null,
     };
   }
   const details = fieldErrorsDetailsSchema.safeParse(parsed.data.error.details);
@@ -53,13 +56,14 @@ async function failureFrom(response: Response): Promise<ApiFailure> {
     code: parsed.data.error.code,
     message: parsed.data.error.message,
     fieldErrors: details.success ? firstMessages(details.data.fieldErrors) : {},
+    details: parsed.data.error.details,
   };
 }
 
 // Same-origin JSON call from the browser; the session cookie travels automatically.
 export async function sendJson(
   url: string,
-  options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<ApiResult> {
   let response: Response;
   try {

@@ -3,6 +3,15 @@
 Updated 2026-11-10 and committed with Wave 2B. Resume from exactly this state. Do **not** recreate the
 project, reset any database, commit, push or start Wave 3 without the owner's explicit approval.
 
+## Latest: Wave 3 step 4, catalogue admin API and UI (2026-11-10, committed locally, not pushed)
+
+- 19 admin API route files, 6 admin pages and the `CatalogueAdmin` components (journal: "Wave 3 step 4";
+  API: `docs/API_DOCUMENTATION.md`; walkthrough: `docs/walkthroughs/wave-3.md`).
+- Tests: 258 unit, 184 integration, 51 HTTP, 48 browser; format, lint, typecheck and build pass.
+- Development fingerprint still `04adce0841b9013d69f13b043ae4a245`.
+- Committed locally as "Wave 3 step 4: catalogue admin API, admin pages, HTTP and browser tests" (the
+  commit containing this file). Not pushed. Wave 4 needs the owner's approval.
+
 ## Latest: Wave 3 step 3, catalogue services (2026-11-10, committed locally, not pushed)
 
 - Service layer for D9–D15 in `src/modules/catalogue/` (journal: "Wave 3 step 3"; decisions: TD-016

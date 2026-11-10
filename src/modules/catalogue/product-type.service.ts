@@ -26,6 +26,7 @@ import {
   findProductType,
   insertAttributeDefinition,
   insertProductType,
+  listActiveDefinitionsForTypes,
   listAttributeDefinitions,
   listProductTypes,
   lockProductTypeForDefinitionChange,
@@ -69,6 +70,27 @@ function definitionAuditData(definition: AttributeDefinitionRow) {
 export async function listAllProductTypes(staff: StaffContext): Promise<ProductTypeRow[]> {
   assertStaffPermission(staff, 'catalogue.read');
   return await listProductTypes(getDatabase());
+}
+
+// Unarchived types with their active definitions, for the "new product" form: two queries in total.
+export async function listProductTypesWithDefinitions(
+  staff: StaffContext,
+): Promise<ProductTypeDetail[]> {
+  assertStaffPermission(staff, 'catalogue.read');
+  const database = getDatabase();
+  const productTypes = (await listProductTypes(database)).filter(
+    ({ archivedAt }) => archivedAt === null,
+  );
+  const definitions = await listActiveDefinitionsForTypes(
+    database,
+    productTypes.map(({ id }) => id),
+  );
+  return productTypes.map((productType) => ({
+    ...productType,
+    attributeDefinitions: definitions.filter(
+      ({ productTypeId }) => productTypeId === productType.id,
+    ),
+  }));
 }
 
 export async function getProductType(

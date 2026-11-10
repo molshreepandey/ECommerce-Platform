@@ -1590,3 +1590,86 @@ regression; 0 development Redis keys. All test setup ran on `ecommerce_test` thr
   negative test `https://user:secret@picsum.photos/x.jpg`, which must be refused.
 - **Checks (Node v26.13.0):** `git diff --check`, format, lint, typecheck, build all pass; unit 258 / 258;
   integration 184 / 184 (re-run because of the fix). Development fingerprint `04adce08…` before and after.
+
+## Wave 3 step 4: catalogue admin API, admin pages, HTTP and browser tests (2026-11-10, done; awaiting owner review, not committed)
+
+Owner-approved scope: admin route handlers on the existing services, the admin UI for product types,
+attributes, brands, products, variants and images, HTTP tests and browser tests. Not done, by instruction:
+no checkout, payment, order or pricing work (prices stay integer paise; L28), no development seed or
+database change, no commit or push.
+
+### What was built
+
+| Area                              | Files                                                                                                                                                                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API (19 route files, 25 handlers) | `src/app/api/admin/{product-types,attribute-definitions,brands,products,variants,media}/**/route.ts`; `src/lib/request-query.ts`; `PUT` in `src/lib/api-client.ts` (which now also passes the error `details` to the UI)                                                        |
+| Pages (6)                         | `src/app/admin/{product-types,product-types/[productTypeId],brands,products,products/new,products/[productId]}/page.tsx`; shared `admin-page-frame.tsx` (session, role-aware navigation, access-denied state) and `catalogue-page-parts.tsx`                                    |
+| Components                        | `src/components/organisms/CatalogueAdmin/` (product types, attribute definitions, brands, product create form, product editor, variants, images, filters, action and failure helpers); `src/components/molecules/SelectField`; 7 icons; 3 navigation entries (`catalogue.read`) |
+| Service additions                 | `listProductTypesWithDefinitions` (one query for all types, no N+1); plain-language "required" messages in the attribute validator                                                                                                                                              |
+| Tests                             | `tests/http/catalogue.http.test.ts` (11); `e2e/catalogue.spec.ts` (4 × desktop and 360 px)                                                                                                                                                                                      |
+| Docs                              | API documentation (catalogue section), traceability (R13, T6, T8; L24 resolved; L27–L29), testing strategy, Wave 3 walkthrough                                                                                                                                                  |
+
+Every handler calls `requirePermission` first, then parses the path id (`z.uuid()`), the query or the body
+with the shared strict schema, then calls the service (which checks the permission again).
+
+### Problems found while building, all fixed
+
+1. **Technical error text in the form.** A missing required attribute returned Zod's "Invalid input:
+   expected string, received undefined". Found by the browser test; the validator now says "Choose a value",
+   "Enter a value" or "Choose at least one value" (unit test updated).
+2. **Unsaved edits would be lost.** A `key={product.version}` on the details form would have remounted it
+   whenever a variant or image change moved the version; removed before testing.
+3. **N+1 on the new-product page.** Loading each type's definitions separately was replaced by one query.
+4. Lint findings fixed: JSX inside `try/catch` (React rule), a dynamic `delete`, unused values, a `Link`
+   appearance that does not exist.
+5. Test mistakes of my own: duplicate toasts and hidden duplicate content (Next 16 keeps a hidden copy, so
+   assertions match visible elements, as the existing helpers do), the confirm dialog's role, and an
+   intended API-client shape change (`details`) that the existing unit test now asserts. One shell slip: a
+   loop variable named `path` cleared `PATH` in zsh for that command only.
+
+### Tests (Node v26.13.0, 2026-11-10 12:30–12:39 UTC)
+
+| Command                                      | Result                                                                        |
+| -------------------------------------------- | ----------------------------------------------------------------------------- |
+| `format:check`, `lint`, `typecheck`, `build` | all exit 0 (catalogue pages are partial prerender)                            |
+| `npm test`                                   | 258 / 258                                                                     |
+| `npm run test:integration`                   | 184 / 184                                                                     |
+| `npm run test:http` (production build)       | **51 / 51** (+11)                                                             |
+| `npm run test:e2e` (production build)        | **48 / 48** (+8); the catalogue spec also passed a second run with fresh data |
+
+HTTP coverage: 401 without a session (read and write), 403 for a customer session and for read-only staff on
+five kinds of write, 403 cross-site origin, 404 on the store host, 400 for malformed JSON, unknown fields, a
+bad id and five bad query parameters, 404 unknown product, a full create → 422 → generate → image →
+activate → list → 409 last variant → archive workflow, 409 duplicate code and SKU, five concurrent edits from
+one version giving exactly one 200 and four 409 `STALE_PRODUCT`, and image reorder with a stale-order 409.
+
+Browser coverage (desktop and 360 px, no page errors, no CSP violations, no horizontal overflow): a catalogue
+manager creates a new product type with its own attributes, a brand, sees an inline error for a missing
+required attribute, creates the product, is refused activation without a variant (reason shown), generates
+size variants, adds an image, activates it and finds it with the list filters (the plan's Wave 3 "done
+when"); support staff see the product with no write controls and get the access-denied state on the
+new-product page; a save from a stale tab shows the conflict message; the last active variant cannot be
+archived, and an archived product disappears from the list.
+
+### Databases
+
+Development fingerprint `04adce0841b9013d69f13b043ae4a245` at 12:38 UTC (unchanged); 0 development Redis
+keys. Test servers stopped.
+
+### Pre-commit review (owner-approved commit, 2026-11-10 12:55 UTC)
+
+- **Routes:** a scan of all 19 files found 25 handlers, every one wrapped in `apiHandler` (so the
+  same-origin check covers all 19 state-changing handlers), every one starting with `requirePermission`
+  (`catalogue.read` for the 6 `GET`s, `catalogue.write` for the rest), every path id parsed with `z.uuid()`,
+  and every body or query read only through `parseJsonBody` / `parseSearchParams` with a strict schema.
+- **No UI bypass:** pages call services that check permissions again; the UI only calls these routes, and
+  HTTP tests prove read-only staff get 403 on writes.
+- **Form state:** a new browser check types an unsaved description, generates variants and adds an image
+  (each moves the product version and refreshes the page), confirms the text is still there, and saves it
+  successfully (no stale-version conflict), on desktop and 360 px.
+- **Currency:** prices are integer paise, displayed only through the existing `Money.formatRupees`
+  (`en-IN`, `INR`); no other currency and no pricing logic.
+- **Hygiene:** no secrets, debug code, focused or skipped tests, TODOs, home paths, build artefacts or files
+  outside the catalogue API, admin pages, catalogue components, the shared client helpers, tests and docs.
+- **Checks (Node v26.13.0):** `git diff --check`, format, lint, typecheck, build pass; unit 258 / 258;
+  integration 184 / 184; HTTP 51 / 51; browser 48 / 48. Development fingerprint `04adce08…` before and after.

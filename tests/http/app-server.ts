@@ -15,7 +15,7 @@ export function getPage(host: string, pathname: string, cookie?: string) {
   return cookie === undefined ? pageRequest : pageRequest.set('Cookie', cookie);
 }
 
-type JsonMethod = 'get' | 'post' | 'patch' | 'delete';
+type JsonMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
 
 export function callApi(
   method: JsonMethod,

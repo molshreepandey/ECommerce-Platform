@@ -45,6 +45,7 @@ describe('sendJson', () => {
         code: 'VALIDATION_FAILED',
         message: 'Request validation failed',
         fieldErrors: { phone: 'Enter a 10-digit mobile number' },
+        details: { fieldErrors: { phone: ['Enter a 10-digit mobile number', 'second'] } },
       },
     });
   });

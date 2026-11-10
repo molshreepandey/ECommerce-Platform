@@ -92,7 +92,7 @@ describe('validateProductAttributes', () => {
     const result = validateProductAttributes(apparelRules, {});
     expect(result.success).toBe(false);
     if (result.success) return;
-    expect(Object.keys(result.fieldErrors)).toEqual(['attributes.fabric']);
+    expect(result.fieldErrors).toEqual({ 'attributes.fabric': ['Choose a value'] });
   });
 
   it('rejects an enum value that is not allowed', () => {

@@ -97,6 +97,19 @@ export async function listAttributeDefinitions(
   return rows.map(toDefinitionRow);
 }
 
+// One query for every type on a page (no N+1): active definitions of the given types.
+export async function listActiveDefinitionsForTypes(
+  database: DatabaseClient,
+  productTypeIds: readonly string[],
+): Promise<AttributeDefinitionRow[]> {
+  const rows = await database.attributeDefinition.findMany({
+    where: { productTypeId: { in: [...productTypeIds] }, archivedAt: null },
+    select: attributeDefinitionSelect,
+    orderBy: [{ displayOrder: 'asc' }, { code: 'asc' }],
+  });
+  return rows.map(toDefinitionRow);
+}
+
 export async function listActiveAttributeRules(
   database: DatabaseClient,
   productTypeId: string,
