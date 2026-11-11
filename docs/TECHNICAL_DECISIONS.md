@@ -716,3 +716,43 @@ no schema or migration changed.
   are not limited. A replay counts as a write.
 - Not added: no reservation route (reservations stay internal, TD-019), no Redis in any stock path, no
   change to the lock hierarchy.
+
+## TD-021 Admin inventory pages (Wave 5, step 4)
+
+Pages: `src/app/admin/{warehouses,inventory,inventory/movements,inventory/low-stock}/page.tsx`; components:
+`src/components/organisms/InventoryAdmin/`. They follow the catalogue admin pattern: a server page wrapped
+in `AdminPageFrame` (session, menu, access-denied state), data read through the step 2 services with the
+signed-in staff member, and client components that change data only through the step 3 API with
+`sendJson`, then refresh the server data. No API, service or schema changed.
+
+- **Permissions.** Pages need `inventory.read`. Write controls are rendered only with `inventory.write`
+  (stock pages) or `warehouses.write` (warehouses); read-only staff see a "can view but not change" line.
+  This is presentation only: the API checks every change (TD-020).
+- **Filters and paging in the URL.** Search, warehouse, low-stock only, movement type and dates are query
+  parameters, so a view can be bookmarked; paging is forward-only (Next, First page) because the API's
+  cursors are keyset cursors. Invalid parameters or a stale cursor show a notice and the first page.
+- **Dates.** Ledger date filters are calendar days in India Standard Time: "from" is 00:00 IST that day
+  and "to" is 00:00 IST the next day (the API's upper bound is exclusive), so the chosen day is included.
+  Times are shown in IST with en-IN formatting; quantities use en-IN digit grouping.
+- **Idempotency keys.** The stock view keeps one keeper per variant (adjustments) and per product
+  (receipts) for as long as the page is open (`createIdempotencyKeeper`, held by `StockMatrix`, not by a
+  dialog). It maps each distinct change to its own key: the same change sent again (a retry in the dialog,
+  or the dialog closed and reopened) reuses its key, so after a lost answer (network error, 502/504, 503 or 429) it is replayed, never applied twice; a different change gets its own key, so an edited change is
+  never refused as a reused key. A change is forgotten once the server confirms it, so doing the same
+  thing again later is a new change. A full page reload starts new keepers. After a network error or a 5xx
+  other than a transaction timeout, the UI says the outcome is unknown (it may have been saved) and
+  refreshes the page.
+- **Conflicts.** A set sends the on-hand quantity the dialog shows. On 409 `STALE_STOCK` the page data is
+  refreshed behind the open dialog, the message names both quantities, and the dialog shows the new one;
+  submitting again is a new change with a new key. Other refusals get plain messages
+  (`inventoryFailureMessage`); 5xx errors never show details.
+- **Dialogs per variant and product.** Adjust and threshold work on one variant and let the user pick the
+  warehouse (a missing stock row counts as 0); receive takes the variants of one product into one
+  warehouse (L56). With a warehouse filter the page only has that warehouse's rows, so the dialogs offer
+  only that warehouse. If a refresh takes the variant out of the current view (for example "Only low
+  stock"), the dialog says its numbers may be out of date and does not submit.
+- **Warehouse edits** send only the fields the person changed (compared with the warehouse as loaded), so
+  a colleague's concurrent change to another field is kept (TD-019).
+- **Navigation.** Four entries (Inventory, Low stock, Stock movements, Warehouses). The sidebar highlights
+  only the most specific matching entry, so "Inventory" is not also active on its sub-pages.
+- Deferred: L56–L58 in `docs/REQUIREMENTS_TRACEABILITY.md`.

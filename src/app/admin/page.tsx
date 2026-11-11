@@ -9,11 +9,24 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { Text } from '@/components/atoms/Text';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { AdminSessionMenu } from '@/components/organisms/AdminSessionMenu';
+import { LowStockTile } from '@/components/organisms/InventoryAdmin';
+import type { StaffContext } from '@/modules/identity/access-control';
 import { currentStaffOrRedirect } from '@/modules/identity/current-session';
 import { getStaffProfile } from '@/modules/identity/staff-account.service';
+import { countLowStock, listLowStock } from '@/modules/inventory/inventory-query.service';
 import { adminNavigationEntries, visibleNavigationItems } from './admin-shell';
 
 const placeholderKpis = ['Orders', 'GMV', 'COD collected', 'Average order value'] as const;
+
+// Shown only to staff who can read inventory (the queries check the permission again).
+async function InventorySummary({ staff }: Readonly<{ staff: StaffContext }>) {
+  if (!staff.permissionCodes.has('inventory.read')) return null;
+  const [totalCount, firstItems] = await Promise.all([
+    countLowStock(staff),
+    listLowStock(staff, { includeInactiveWarehouses: false, limit: 5 }),
+  ]);
+  return <LowStockTile totalCount={totalCount} items={firstItems.items} />;
+}
 
 async function AdminDashboard() {
   const staff = await currentStaffOrRedirect('/');
@@ -40,6 +53,7 @@ async function AdminDashboard() {
             </Card>
           ))}
         </Grid>
+        <InventorySummary staff={staff} />
         <Card padding="none">
           <EmptyState
             icon="package"

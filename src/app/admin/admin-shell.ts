@@ -28,6 +28,25 @@ export const adminNavigationEntries: readonly AdminNavigationEntry[] = [
     icon: 'boxes',
     requiredPermission: 'catalogue.read',
   },
+  { label: 'Inventory', href: '/inventory', icon: 'inbox', requiredPermission: 'inventory.read' },
+  {
+    label: 'Low stock',
+    href: '/inventory/low-stock',
+    icon: 'triangle-alert',
+    requiredPermission: 'inventory.read',
+  },
+  {
+    label: 'Stock movements',
+    href: '/inventory/movements',
+    icon: 'history',
+    requiredPermission: 'inventory.read',
+  },
+  {
+    label: 'Warehouses',
+    href: '/warehouses',
+    icon: 'warehouse',
+    requiredPermission: 'inventory.read',
+  },
 ];
 
 // Signed-out pages (not-found) show the entries every staff member can see.

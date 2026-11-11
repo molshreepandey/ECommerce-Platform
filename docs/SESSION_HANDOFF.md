@@ -1,10 +1,28 @@
 # Session handoff
 
-Updated 2026-11-12 after the Wave 5 step 3 fourth review remediation, the last of the review rounds listed below (admin inventory API: done and verified, **not committed**).
+Updated 2026-11-12 at the end of Wave 5 step 4 (admin inventory pages: done and verified, **not committed**).
 Resume from exactly this state. Do **not** recreate the project, reset any database, commit, push, or start
-Wave 5 step 4 (admin pages) or any later work without the owner's explicit approval.
+Wave 5 step 5 or any later work without the owner's explicit approval.
 
-## Latest: Wave 5 step 3, admin inventory API (2026-11-11 to 2026-11-12, done, NOT committed)
+## Latest: Wave 5 step 4, admin inventory pages (2026-11-12, done, NOT committed)
+
+- Pages on the admin host: `/warehouses` (list, create, edit, activate/deactivate with confirmation),
+  `/inventory` (stock matrix with search, warehouse and low-stock filters, paging; adjust, receive and
+  threshold dialogs; History links), `/inventory/movements` (ledger with warehouse, type, IST date and
+  variant filters), `/inventory/low-stock` (list with total), and a Low stock tile on the dashboard.
+  Journal "Wave 5 step 4"; decisions TD-021.
+- Uses only the step 3 API: adjustments and receipts send an `Idempotency-Key` kept per change; conflicts
+  (stale set, removal beyond on hand, ceiling, rate limit, timeout) have plain messages; read-only roles see
+  no write controls and the API still checks every change. No API, service, schema or migration change.
+- After one independent review (NOT READY: three medium findings), all findings were fixed in one round
+  (journal "Review fixes").
+- Tests: 360 unit, 360 integration, 91 HTTP, 66 browser (desktop and 360 px); build, format, lint,
+  typecheck and `git diff --check` pass. Development untouched: fingerprint still
+  `9cec751c29cab1faab002a9308e23887`.
+- Git: HEAD and `origin/main` are `d9de29f` (step 3); the step 4 code, tests and docs are uncommitted.
+- Next: owner review; with approval, commit step 4 (then push on separate approval).
+
+## Wave 5 step 3, admin inventory API (2026-11-11 to 2026-11-12, commit `d9de29f`, pushed)
 
 - 9 route files, 11 handlers: `/api/admin/warehouses` (GET, POST), `/api/admin/warehouses/{id}` (GET,
   PATCH), `/api/admin/warehouses/{id}/status` (POST), `/api/admin/inventory` (GET stock matrix),
@@ -40,9 +58,8 @@ Wave 5 step 4 (admin pages) or any later work without the owner's explicit appro
 - Tests: 345 unit, 360 integration, 85 HTTP, 52 browser; build, format, lint, typecheck and
   `git diff --check` pass. No schema or migration change. Development untouched: fingerprint still
   `9cec751c29cab1faab002a9308e23887`.
-- Git: HEAD and `origin/main` are `0c1e6f2`; the step 3 code, tests and docs are uncommitted.
-- Next: owner review; with approval, commit step 3 (then push on separate approval) and plan step 4
-  (admin pages: warehouses, stock matrix, adjust dialog, ledger).
+- Git: committed as `d9de29f` ("Wave 5 step 3: add admin inventory APIs", 45 files, parent `0c1e6f2`)
+  and pushed on 2026-11-12 (fast-forward `0c1e6f2..d9de29f`).
 
 ## Wave 5 step 2, inventory services (2026-11-11, complete; commits `ef16d46`, `9c1f691` and `0c1e6f2`, pushed)
 
@@ -143,18 +160,18 @@ Wave 5 step 4 (admin pages) or any later work without the owner's explicit appro
   proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
 - **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
   development; step 2 (inventory services) is complete, committed and pushed (`ef16d46`, `9c1f691`,
-  `0c1e6f2`); step 3 (admin API) is done and verified but not committed; step 4 (admin pages) is not
-  started and needs the owner's explicit approval.
+  `0c1e6f2`); step 3 (admin API) is committed and pushed (`d9de29f`); step 4 (admin pages) is done and
+  verified but not committed.
 
-## Git state (2026-11-12, Wave 5 step 3, uncommitted)
+## Git state (2026-11-12, Wave 5 step 4, uncommitted)
 
-| Item                      | Value                                                                                                                                                                                          |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                                                                                                                                         |
-| HEAD                      | `0c1e6f2` (Wave 5 step 2 push record, documentation only), parent `9c1f691`, then `ef16d46` (Wave 5 step 2)                                                                                    |
-| Relative to `origin/main` | in sync: `origin/main` is `0c1e6f2` (pushed 2026-11-11 as fast-forwards `f6c018b..9c1f691`, then `9c1f691..0c1e6f2`)                                                                           |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691`, `0c1e6f2` (5 step 2) |
-| Working tree              | Wave 5 step 3 code, tests and docs modified or new; not staged, not committed                                                                                                                  |
+| Item                      | Value                                                                                                                                                                                                                |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `main`                                                                                                                                                                                                               |
+| HEAD                      | `d9de29f` (Wave 5 step 3), parent `0c1e6f2` (Wave 5 step 2 push record)                                                                                                                                              |
+| Relative to `origin/main` | in sync: `origin/main` is `d9de29f` (pushed 2026-11-12 as a fast-forward `0c1e6f2..d9de29f`)                                                                                                                         |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691`, `0c1e6f2` (5 step 2); `d9de29f` (5 step 3) |
+| Working tree              | Wave 5 step 4 code, tests and docs modified or new; not staged, not committed                                                                                                                                        |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -217,7 +234,7 @@ New files in the commit (106), by folder:
 Check 7 added `tests/http/client-ip.http.test.ts`, `tests/integration/client-ip-trust.test.ts` and the
 `docs/DEPLOYMENT_GUIDE.md` change; `src/lib/client-ip.ts` and its test were already new in Wave 2B.
 
-## Latest passing tests (Wave 5 step 3, 2026-11-12, Node v26.13.0)
+## Latest passing tests (Wave 5 step 4, 2026-11-12, Node v26.13.0)
 
 Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell here starts on v20).
 
@@ -225,15 +242,14 @@ Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell he
 | ---------------------------------------------------- | -------------------------- |
 | `npm run format:check`, `lint`, `typecheck`, `build` | all exit 0                 |
 | `git diff --check`                                   | clean                      |
-| `npm test`                                           | 345 / 345                  |
+| `npm test`                                           | 360 / 360                  |
 | `npm run test:integration`                           | 360 / 360                  |
-| `npm run test:http` (production build)               | 85 / 85                    |
-| `npm run test:e2e` (production build)                | 52 / 52 (desktop + 360 px) |
+| `npm run test:http` (production build)               | 91 / 91                    |
+| `npm run test:e2e` (production build)                | 66 / 66 (desktop + 360 px) |
 
-`npm run test:http:dev` on `npm run start:test:dev` also passed (85 / 85, 2026-11-12); `npm run test:e2e`
-on `next dev` last ran in the 2026-11-10 regression (40 / 40). After these runs only
-documentation changed (journal, handoff, API documentation, testing strategy, traceability, architecture,
-TD-019 and TD-020).
+`npm run test:http:dev` on `npm run start:test:dev` also passed (91 / 91, 2026-11-12); `npm run test:e2e`
+on `next dev` last ran in the 2026-11-10 regression (40 / 40). One unexplained failure of the existing
+catalogue browser test was seen once in step 4 (journal "Wave 5 step 4").
 
 ## Databases and services
 
@@ -276,9 +292,9 @@ not a database result.
 | 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)                           |
 | 2   | Wave 5 step 2 inventory services                 | complete; N1 fixed; committed and pushed (`ef16d46`, `9c1f691`)  |
 | 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser) |
-| 4   | Wave 5 step 3 (admin inventory API)              | done and verified; awaiting owner review; not committed          |
-| 5   | Push to GitHub                                   | `origin/main` is `0c1e6f2`; step 3 not committed or pushed       |
-| 6   | Wave 5 step 4 (admin pages)                      | not started; needs the owner's explicit approval                 |
+| 4   | Wave 5 step 3 (admin inventory API)              | committed and pushed (`d9de29f`)                                 |
+| 5   | Wave 5 step 4 (admin inventory pages)            | done and verified; awaiting owner review; not committed          |
+| 6   | Push to GitHub                                   | `origin/main` is `d9de29f`; step 4 not committed or pushed       |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
@@ -290,10 +306,10 @@ Deployment requirement (not a finished production setting): staging and producti
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD and `origin/main` are `0c1e6f2`; the Wave 5 step 3 files are
-   uncommitted in the working tree (29 modified, 16 new); the development fingerprint is `9cec751c…`;
-   both databases record five migrations; three healthy containers.
-2. Wait for the owner's approval before committing step 3, pushing, or starting Wave 5 step 4. Do not seed development, or reset or truncate any
+1. Check that nothing changed: HEAD and `origin/main` are `d9de29f`; the Wave 5 step 4 files are
+   uncommitted in the working tree; the development fingerprint is `9cec751c…`; both databases record
+   five migrations; three healthy containers.
+2. Wait for the owner's approval before committing step 4, pushing, or starting any later step. Do not seed development, or reset or truncate any
    database without explicit approval.
 
 ## Rules still in force

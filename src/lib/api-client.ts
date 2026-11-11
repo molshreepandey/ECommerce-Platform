@@ -63,13 +63,20 @@ async function failureFrom(response: Response): Promise<ApiFailure> {
 // Same-origin JSON call from the browser; the session cookie travels automatically.
 export async function sendJson(
   url: string,
-  options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: {
+    method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    body?: unknown;
+    headers?: Readonly<Record<string, string>>;
+  } = {},
 ): Promise<ApiResult> {
   let response: Response;
   try {
     response = await fetch(url, {
       method: options.method ?? 'POST',
-      headers: options.body === undefined ? {} : { 'Content-Type': 'application/json' },
+      headers: {
+        ...options.headers,
+        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       credentials: 'same-origin',
     });

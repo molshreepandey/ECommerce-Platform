@@ -10,6 +10,7 @@ import {
   Eye,
   EyeOff,
   FolderTree,
+  History,
   Image as ImageIcon,
   Inbox,
   Info,
@@ -30,6 +31,7 @@ import {
   Trash2,
   TriangleAlert,
   User,
+  Warehouse,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -46,6 +48,7 @@ export const iconRegistry = {
   eye: Eye,
   'eye-off': EyeOff,
   'folder-tree': FolderTree,
+  history: History,
   image: ImageIcon,
   inbox: Inbox,
   info: Info,
@@ -66,5 +69,6 @@ export const iconRegistry = {
   trash: Trash2,
   'triangle-alert': TriangleAlert,
   user: User,
+  warehouse: Warehouse,
   close: X,
 } as const satisfies Record<string, LucideIcon>;

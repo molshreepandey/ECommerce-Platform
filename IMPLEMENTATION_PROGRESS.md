@@ -16,9 +16,9 @@ each entry was written; this list is the current status.
       applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
       inventory services: **complete**; commit `ef16d46` plus documentation follow-up `9c1f691`, both pushed to
       GitHub on 2026-11-11, after the N1 fix and a full regression (332 unit, 351 integration, 56 HTTP, 52
-      browser). Step 3, the admin inventory API, with its hardening pass and review fixes: done and verified
-      (345 unit, 360 integration, 85 HTTP, 52 browser), **not committed**, awaiting owner review. Step 4 (admin pages) not
-      started.
+      browser). Step 3, the admin inventory API: commit `d9de29f`, pushed on 2026-11-12. Step 4, the admin
+      inventory pages: done and verified (360 unit, 360 integration, 91 HTTP, 66 browser), **not committed**,
+      awaiting owner review.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -2324,3 +2324,117 @@ typecheck and `git diff --check` exit 0. The server log showed one deliberate ex
 no "Unable to start a transaction" and no unhandled error. Development fingerprint
 `9cec751c29cab1faab002a9308e23887` before and after. Test counts are unchanged (the test was rewritten, not
 added).
+
+## Wave 5 step 4: admin inventory pages (2026-11-12, done; awaiting owner review, not committed)
+
+Owner-approved scope: the admin UI over the step 2 services and step 3 API. No API, service, schema or
+migration change; no development database write. Decisions: TD-021.
+
+### What was built
+
+| Page (admin host)      | Who sees what                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/warehouses`          | list with code, address, contact, priority and status; create and edit in a dialog (field errors from the shared schemas); activate or deactivate after a confirmation that says what happens to stock and reservations. Write controls need `warehouses.write`.                                                                                                                                                          |
+| `/inventory`           | stock matrix by product → variant → warehouse with on hand, reserved, available, alert level and an in stock / low stock / out of stock badge; search, warehouse filter, low-stock only, paging; per variant: Adjust (add, remove, set counted quantity, with reason), Threshold, History; per product: Receive stock (one warehouse, a quantity per variant, supplier reference). Write controls need `inventory.write`. |
+| `/inventory/movements` | the ledger, newest first: type, SKU, product, warehouse, signed change, on hand and reserved before → after, reason, reference, actor, time in IST; filters for warehouse, type, from and to dates (IST calendar days), and a variant (from History links); paging                                                                                                                                                        |
+| `/inventory/low-stock` | rows at or below their alert level with the total, warehouse filter, inactive warehouses on request, links to the stock view for that SKU and warehouse; paging                                                                                                                                                                                                                                                           |
+| `/` (dashboard)        | a Low stock tile with the count and the first five rows of the low-stock list (by warehouse), for staff with `inventory.read`                                                                                                                                                                                                                                                                                             |
+
+Files: pages `src/app/admin/{warehouses,inventory,inventory/movements,inventory/low-stock}/page.tsx` and
+`src/app/admin/inventory/inventory-page-parts.tsx`; components in
+`src/components/organisms/InventoryAdmin/` (`WarehouseManager`, `StockFilters`, `StockMatrix`,
+`StockDialogs` with the adjust, receive and threshold dialogs, `MovementFilters`, `MovementList`,
+`LowStockFilters`, `LowStockList`, `LowStockTile`, `inventory-actions`, `inventory-format`,
+`idempotency-key`, `inventory-types`). Shared changes: `sendJson` takes extra headers
+(`src/lib/api-client.ts`); icons `warehouse` and `history`; four menu entries (Inventory, Low stock, Stock
+movements, Warehouses; `inventory.read`); the sidebar highlights only the most specific matching entry
+(`active-navigation.ts`); the access-denied text no longer names the catalogue.
+
+Behaviour worth knowing:
+
+- **Idempotency.** The stock view keeps an `Idempotency-Key` per distinct change while the page is open
+  (not per dialog): sending the same change again, also from a reopened dialog, reuses its key and is
+  replayed; a different change gets its own key; a confirmed change is forgotten. See the review fixes
+  below.
+- **Conflicts.** A set states the on-hand quantity the dialog shows. If it changed meanwhile, the 409 is
+  shown with both numbers, the page refreshes behind the dialog, the dialog shows the new number, and
+  submitting again sends a new request. Removing more than is on hand, passing the 1,000,000 ceiling, rate
+  limits and timeouts each have a plain message; server errors never show internals.
+- **RBAC.** Read-only roles get no write buttons (they are not rendered) and a "You can view … but not
+  change it" line; staff without `inventory.read` get the access-denied state and no menu entries. Every
+  change is still checked by the API.
+- **Invalid URLs.** Bad filters or a stale page cursor show a notice and the first page instead of an
+  error.
+- Numbers use en-IN grouping (12,34,567); times are shown in IST. No currency appears in these pages.
+
+### Tests
+
+| Suite                      | Before step 4 | After step 4 (2026-11-12)                                                                                                                |
+| -------------------------- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`                 | 345           | **360 / 360** (+15: formatting and IST date bounds 5, idempotency keys 4, failure messages 3, active navigation 2, `sendJson` headers 1) |
+| `npm run test:integration` | 360           | **360 / 360** (no service change)                                                                                                        |
+| `npm run test:http`        | 85            | **91 / 91** (+6, `tests/http/inventory-pages.http.test.ts`)                                                                              |
+| `npm run test:e2e`         | 52            | **66 / 66** (+7 tests × desktop and 360 px, `e2e/inventory.spec.ts`)                                                                     |
+
+HTTP page tests: the inventory manager sees all four pages with their write controls and the dashboard tile;
+bad filters and unknown cursors fall back with a notice; support sees every page with no write control;
+staff with only `catalogue.read` get the access-denied state on all four pages and no menu entries or tile;
+anonymous visitors are redirected to sign-in.
+
+Browser tests (desktop and 360 px, no page errors, no CSP violations, no horizontal overflow): an inventory
+manager creates a warehouse (validation first), edits, deactivates and reactivates it with confirmation;
+receives stock for two variants (an empty receipt is refused first); a removal beyond on hand is refused
+with the number, a smaller one works; sets a counted quantity and an alert level that makes a variant low;
+sees the three changes in the variant's history and filters by type; finds the low variant from the
+dashboard tile. Two sessions: a counted quantity based on an old screen is refused with both numbers, the
+dialog then shows the new quantity, and resubmitting applies. Support sees stock and warehouses without any
+write control.
+
+Browser-test stability, investigated rather than retried:
+
+- On desktop, one full parallel run clicked "Deactivate <name>" right after renaming the warehouse, before
+  the list refreshed; the old card's button ("… draft") matched the name as a prefix. The test now waits
+  for the renamed card and matches button names exactly.
+- At 360 px the success toast covers the next button, so Playwright waits about 5 seconds for it to go
+  before each click (seen in the trace as 5-second gaps between requests). Seven such waits brought the
+  first long test to the 30-second limit once under load. The test was split into three serial tests (no
+  timeout raised); the longest now takes about 18 seconds at 360 px. The toast is a normal transient
+  overlay, so the UI was not changed.
+- The existing catalogue browser test failed once ("Product activated" toast not seen within 5 seconds,
+  desktop) in one full run; no trace was kept for it, so the cause is not known. It did not recur in six
+  later full runs or in single runs. Repeating that spec with `--repeat-each` is not a valid check: it
+  reuses its run id and its second creation is refused with 409 (seen in the trace).
+- After these changes: three full browser runs in a row, 62 / 62 each (before the review fixes below).
+
+### Review fixes (2026-11-12)
+
+One independent read-only review found three medium and five low issues (verdict NOT READY FOR COMMIT).
+All were fixed in one round; no API, service or schema changed.
+
+| Finding                                                                                                                                                                          | Fix                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1: with a warehouse filter, the adjust and threshold dialogs offered other warehouses and showed 0 for them (the page only had the filtered rows), so a set there always failed | with a filter the dialogs offer only that warehouse (`StockMatrix`); L35 text corrected                                                                                                                                     |
+| M2: the key lived in the dialog, so closing and reopening it after a lost answer sent a new key and could apply twice; "Nothing was changed" was claimed for any 5xx             | keepers live in `StockMatrix` per variant and product, map each change to its key and forget it once confirmed; after a network error or 5xx (not a timeout) the message says the outcome is unknown and the page refreshes |
+| M3: a warehouse edit sent every field and could overwrite a colleague's change to another field                                                                                  | only changed fields are sent; saving with no change says so                                                                                                                                                                 |
+| L1: after a refresh that took the variant out of view, the dialogs kept stale numbers                                                                                            | they say so and do not submit                                                                                                                                                                                               |
+| L2: the tile said "lowest" but shows the list's first rows                                                                                                                       | wording corrected                                                                                                                                                                                                           |
+| L3: filter forms kept old values after Clear                                                                                                                                     | filter forms are keyed by the URL                                                                                                                                                                                           |
+| L4: History link name, receive-line errors not announced, the 100-line error not shown, old errors kept after a change, edit error reappearing on the page                       | `History of <SKU>`; line errors in an alert; schema line errors shown; errors cleared on change; edit errors cleared on close                                                                                               |
+| L5: weak or flaky HTTP assertions                                                                                                                                                | badge matched exactly; movements filtered by variant; menu checked by `href`                                                                                                                                                |
+| Info                                                                                                                                                                             | movements page keeps `limit` in page links; on-hand grid wraps to two columns below 640 px                                                                                                                                  |
+
+New tests: a unit test for keepers (an earlier change keeps its key; a confirmed change is forgotten) and two
+browser tests per project: a lost answer (the first adjustment is applied but the browser gets 502), then the
+same change resent from a reopened dialog must be a 200 replay with stock unchanged, plus the filtered
+dialog offering one warehouse; and a warehouse edit that keeps a colleague's concurrent change.
+
+Mutation checks (production build rebuilt and served, files restored byte for byte and rebuilt): with
+partial edits replaced by sending every field, the concurrent-edit test failed; with a new keeper per dialog
+opening, the lost-answer test first passed because its last check read the page before the refresh, so it
+was strengthened to assert the replay itself (200 with `replayed: true`) and to reload before checking
+stock; it then failed as expected ("Expected: 200, Received: 201").
+
+Results (Node v26.13.0): `npm test` 360 / 360; `npm run test:integration` 360 / 360; `npm run build` exit 0;
+`npm run test:http` 91 / 91; `npm run test:e2e` 66 / 66 twice in a row; `npm run test:http:dev` 91 / 91;
+format, lint, typecheck and `git diff --check` exit 0. Development fingerprint
+`9cec751c29cab1faab002a9308e23887` before and after.

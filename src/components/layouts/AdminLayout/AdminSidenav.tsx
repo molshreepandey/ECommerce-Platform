@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import { focusRingClassNames } from '@/components/atoms/focus-ring';
 import { Icon } from '@/components/atoms/Icon';
 import type { AdminSidenavProps } from './admin-layout.types';
+import { activeNavigationHref } from './active-navigation';
 
 const sidenavLinkClassNames = cva(
   [
@@ -22,13 +23,12 @@ const sidenavLinkClassNames = cva(
   },
 );
 
-function isActivePath(currentPath: string, itemHref: string): boolean {
-  if (itemHref === '/') return currentPath === '/';
-  return currentPath === itemHref || currentPath.startsWith(`${itemHref}/`);
-}
-
 export function AdminSidenav({ navigationItems }: AdminSidenavProps) {
   const currentPath = usePathname();
+  const activeHref = activeNavigationHref(
+    currentPath,
+    navigationItems.map(({ href }) => href),
+  );
   return (
     <aside className="bg-nav-background md:min-h-screen md:w-60 md:shrink-0">
       <div className="flex items-center gap-sm px-lg py-md text-white">
@@ -38,7 +38,7 @@ export function AdminSidenav({ navigationItems }: AdminSidenavProps) {
       <nav aria-label="Admin">
         <ul className="flex gap-xs overflow-x-auto px-sm pb-sm md:flex-col md:overflow-visible">
           {navigationItems.map((navigationItem) => {
-            const isActive = isActivePath(currentPath, navigationItem.href);
+            const isActive = navigationItem.href === activeHref;
             return (
               <li key={navigationItem.href}>
                 <NextLink

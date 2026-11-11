@@ -70,4 +70,22 @@ describe('sendJson', () => {
       data: null,
     });
   });
+
+  it('sends extra headers such as an Idempotency-Key next to the JSON content type', async () => {
+    let sentInit: RequestInit | undefined;
+    const fetchMock = vi.fn((url: string, init: RequestInit) => {
+      expect(url).toBe('/api/admin/inventory/receipts');
+      sentInit = init;
+      return Promise.resolve(Response.json({ ok: true }, { status: 201 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await sendJson('/api/admin/inventory/receipts', {
+      body: { lines: [] },
+      headers: { 'Idempotency-Key': 'a1b2c3d4-e5f6-7890-abcd-ef0123456789' },
+    });
+    expect(sentInit?.headers).toEqual({
+      'Idempotency-Key': 'a1b2c3d4-e5f6-7890-abcd-ef0123456789',
+      'Content-Type': 'application/json',
+    });
+  });
 });

@@ -43,7 +43,7 @@ export async function AdminPageFrame({
           icon="circle-alert"
           headingLevel={2}
           title="You do not have access to this page"
-          description="Ask a super admin for the catalogue permission if you need it."
+          description="Ask a super admin for the permission this page needs if you need it."
         />
       )}
     </AdminLayout>
