@@ -1,10 +1,28 @@
 # Session handoff
 
-Updated 2026-11-10 during Wave 5 step 1. Resume from exactly this state. Do **not** recreate the project,
-reset any database, commit, push or start the Wave 5 inventory services, APIs or UI without the owner's
-explicit approval.
+Updated 2026-11-11 at the end of Wave 5 step 2, checkpoint 6. Resume from exactly this state. Do **not**
+recreate the project, reset any database, commit, push, or start Wave 5 step 3 (admin API) or any later
+work without the owner's explicit approval.
 
-## Latest: Wave 5 step 1, inventory ledger migration foundation (2026-11-10, staged locally, not committed or pushed)
+## Latest: Wave 5 step 2, inventory services (2026-11-11, checkpoints 1–6 done, NOT committed)
+
+- `src/modules/inventory/`: warehouses; idempotent staff stock changes (add, remove, set as ADJUSTMENT;
+  supplier receipts as RECEIPT); low-stock thresholds; internal `reserveStock`, `releaseReservation` and
+  `applyReservationChanges` for Waves 8–9; read-only stock matrix, low-stock, ledger and availability
+  queries. The catalogue "in stock" filter now uses the inventory definition (active warehouses only, D30).
+- Rules, the global lock hierarchy (L0a orders → L0b shipments → L1 requests → L2 products → L3 variants →
+  L4 warehouses → L5 stock rows → inserts) and the **reservation caller contract**: TD-019. Journal:
+  "Wave 5 step 2". Limitations L35–L50 (mandatory: L40 dispatch races in Wave 9, L38 tracker check before
+  Wave 8, L41 volume checks in Wave 14).
+- Tests: 332 unit, 349 integration (after checkpoint 5); HTTP 56 and browser 52 last run in step 1 (no
+  route or page changed since) and must be re-run before this step is committed. No schema or migration
+  change. Development untouched: fingerprint still `9cec751c29cab1faab002a9308e23887`.
+- Working tree: the step 2 code, tests and docs are **uncommitted** (HEAD `f6c018b`).
+- Next: owner review of the checkpoint 6 report; with approval, run the full regression on
+  `ecommerce_test`, commit step 2, then plan step 3 (admin API: `Idempotency-Key` header, schemas at the
+  boundary, retryable transaction-timeout error, aligned quantity limits, cursor validation).
+
+## Wave 5 step 1, inventory ledger migration foundation (2026-11-10, commit `f6c018b`, pushed)
 
 - Migrations `20261110150000_inventory_receipt_movement_type` and `20261110150100_inventory_ledger_integrity`
   (RECEIPT movement type, ledger CHECKs and indexes, low-stock index, `inventory_change_requests` for
@@ -20,10 +38,8 @@ explicit approval.
   `62ff93c1…`), with the baselines and the full command log next to it.
 - Rollback scripts: `prisma/rollbacks/20261110150100_…down.sql` first, then `…150000_…down.sql`, run only as
   `psql -d <db> -v expected_database=<db> < script` (no `-1`).
-- At the time of writing, the migration foundation (migrations, rollback scripts, the constraint test file,
-  schema and these docs) is **staged locally, not committed and not pushed**.
-- Next: owner review and approval of the commit; then, with separate approval, the Wave 5 inventory
-  services, APIs and UI.
+- Committed as "Wave 5 step 1: inventory ledger migrations, rollback scripts and constraint tests"
+  (`f6c018b`, 11 files) and pushed to `origin/main` on 2026-11-10 (fast-forward `e0c3895..f6c018b`).
 
 ## Wave 4, category tree, tagging and product groups (2026-11-10, commit `e0c3895`, pushed)
 
@@ -78,20 +94,21 @@ explicit approval.
 
 ## Where things stand
 
-- **Waves 1–4 are finished, committed and pushed.** `origin/main` is `e0c3895` (Wave 4). Wave 2B includes
-  final check 7 (client IP behind proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
-- **Wave 5 is in progress:** step 1 (migration foundation) is applied to test and development and staged
-  locally, not committed or pushed. Inventory services, APIs and UI are not started.
+- **Waves 1–4 are finished, committed and pushed.** Wave 2B includes final check 7 (client IP behind
+  proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
+- **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
+  development; step 2 (inventory services) is done and reviewed but uncommitted; steps 3 (admin API) and 4
+  (admin pages) are not started.
 
-## Git state (2026-11-10, Wave 5 step 1)
+## Git state (2026-11-11, Wave 5 step 2)
 
-| Item                      | Value                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                                                                       |
-| HEAD                      | `e0c3895` (Wave 4), parent `800dd41`                                                                                         |
-| Relative to `origin/main` | up to date (0 ahead); pushed on 2026-11-10 as a fast-forward `d7e3a0e..e0c3895`                                              |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4) |
-| Working tree              | the Wave 5 step 1 migration foundation staged, not committed                                                                 |
+| Item                      | Value                                                                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `main`                                                                                                                                             |
+| HEAD                      | `f6c018b` (Wave 5 step 1), parent `e0c3895` (Wave 4)                                                                                               |
+| Relative to `origin/main` | up to date (0 ahead); pushed on 2026-11-10 as a fast-forward `e0c3895..f6c018b`                                                                    |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1) |
+| Working tree              | Wave 5 step 2 code, tests and docs modified or new, not staged and not committed                                                                   |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -207,24 +224,28 @@ not a database result.
 
 | #   | Item                                             | Status                                          |
 | --- | ------------------------------------------------ | ----------------------------------------------- |
-| 1   | Wave 5 step 1 migrations on test and development | done (applied to development 17:49:25 UTC)      |
-| 2   | Commit of the Wave 5 step 1 migration foundation | staged; awaiting the owner's approval           |
-| 3   | Wave 5 inventory services, APIs and UI           | not approved yet                                |
-| 4   | Push to GitHub                                   | Waves 1–4 pushed (`e0c3895`); Wave 5 not pushed |
+| 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)          |
+| 2   | Wave 5 step 2 inventory services                 | done and reviewed (checkpoint 6); not committed |
+| 3   | Full regression and commit of step 2             | awaiting the owner's approval                   |
+| 4   | Wave 5 steps 3–4 (admin API and pages)           | not approved yet                                |
+| 5   | Push to GitHub                                   | up to `f6c018b`; step 2 not pushed              |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
-snapshot, L31 category and group snapshot decision (before order implementation). Outstanding limitations: L1–L23 in `docs/REQUIREMENTS_TRACEABILITY.md`.
+snapshot, L31 category and group snapshot decision (before order implementation), L47 reservation caller
+contract (TD-019). Mandatory in Wave 9: L40 real dispatch and cancellation race tests. Before Wave 8: L38
+lock-tracker check. Outstanding limitations: L1–L50 in `docs/REQUIREMENTS_TRACEABILITY.md`.
 Deployment requirement (not a finished production setting): staging and production keep
 `trustedProxyHopCount` at 0 until the real proxy topology is verified (TD-015, DEPLOYMENT_GUIDE).
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD is `e0c3895` and equals `origin/main`; the Wave 5 step 1 migration
-   foundation is staged (or, once approved, committed); the development fingerprint is `9cec751c…`; both
-   databases record five migrations; three healthy containers.
-2. Wait for the owner's approval before committing, pushing, or starting the Wave 5 inventory services,
-   APIs and UI. Do not seed development, or reset or truncate any database without explicit approval.
+1. Check that nothing changed: HEAD is `f6c018b` and equals `origin/main`; the Wave 5 step 2 files are
+   uncommitted in the working tree; the development fingerprint is `9cec751c…`; both databases record five
+   migrations; three healthy containers.
+2. Wait for the owner's approval before running the full regression (it writes to `ecommerce_test`),
+   committing, pushing, or starting Wave 5 step 3. Do not seed development, or reset or truncate any
+   database without explicit approval.
 
 ## Rules still in force
 

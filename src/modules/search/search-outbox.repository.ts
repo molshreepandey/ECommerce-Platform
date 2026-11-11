@@ -49,3 +49,27 @@ export async function enqueueProductsInCategorySubtree(
     SELECT 'product', p.id FROM products p JOIN categories c ON c.id = p.category_id
     WHERE c.path LIKE ${categoryPath} || '%'`;
 }
+
+// A warehouse's status decides whether its stock counts as available, so every product stocked there is
+// reindexed. Reads stock rows without locking them (a warehouse change never waits on stock rows).
+export async function enqueueProductsStockedInWarehouse(
+  database: DatabaseClient,
+  warehouseId: string,
+): Promise<number> {
+  return database.$executeRaw`
+    INSERT INTO search_outbox (entity_type, entity_id)
+    SELECT DISTINCT 'product', variant.product_id
+    FROM inventory_levels AS level JOIN product_variants AS variant ON variant.id = level.variant_id
+    WHERE level.warehouse_id = ${warehouseId}::uuid`;
+}
+
+// Stock changes alter availability, which is part of each product's search document.
+export async function enqueueProductsOfVariants(
+  database: DatabaseClient,
+  variantIds: readonly string[],
+): Promise<number> {
+  if (variantIds.length === 0) return 0;
+  return database.$executeRaw`
+    INSERT INTO search_outbox (entity_type, entity_id)
+    SELECT DISTINCT 'product', product_id FROM product_variants WHERE id = ANY(${[...variantIds]}::uuid[])`;
+}

@@ -42,6 +42,16 @@ export const auditActions = [
   'grouping.members_added',
   'grouping.member_removed',
   'grouping.members_reordered',
+  'inventory.stock_added',
+  'inventory.stock_removed',
+  'inventory.stock_set',
+  'inventory.stock_received',
+  'inventory.stock_reserved',
+  'inventory.reservation_released',
+  'inventory.low_stock_threshold_changed',
+  'warehouse.created',
+  'warehouse.updated',
+  'warehouse.status_changed',
 ] as const;
 
 export type AuditAction = (typeof auditActions)[number];

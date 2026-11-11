@@ -42,6 +42,20 @@ Every catalogue foreign key is `ON DELETE RESTRICT`, and the project has no trig
 variant is a status change only, so stock rows, reservations, movements, order lines, cart lines, reviews
 and collection links are never deleted or modified by it (TD-016).
 
+## Inventory ledger conventions (Wave 5, TD-018 and TD-019)
+
+- `inventory_levels.available_quantity` is generated (`on_hand_quantity − reserved_quantity`); the CHECK
+  `0 ≤ reserved ≤ on hand` keeps it from going negative.
+- Each movement stores its delta and the quantities **after** it. RESERVE and RELEASE change reserved,
+  DISPATCH lowers on hand and reserved together by its (negative) delta, every other type changes on hand;
+  "before" values are derived from that, never stored. The existing data replays exactly by this rule.
+- `reference_type`/`reference_id`: `shipment` for RESERVE, RELEASE and DISPATCH (what a shipment still has
+  reserved is the sum of those three deltas for that shipment, variant and warehouse);
+  `inventory_change_request` for staff adjustments and receipts (the idempotent request that wrote them).
+  No foreign key backs these references; only the inventory services write them.
+- Staff stock requests are rows in `inventory_change_requests` (unique per staff member and key), kept
+  indefinitely.
+
 ## Integrity requirements for later waves (mandatory)
 
 - **Wave 8, before order placement:** add the composite FK `order_items(product_id, variant_id)` →
@@ -49,6 +63,11 @@ and collection links are never deleted or modified by it (TD-016).
   2026-11-10 it found 0 mismatched rows in development.
 - **Wave 8, before order placement:** order items must snapshot `weight_grams`, `length_mm`, `breadth_mm`
   and `height_mm`, so later catalogue edits cannot change historical shipment calculations.
+- **Wave 8 checkout:** insert the order and its shipments before reserving, and reserve only through
+  `reserveStock` / `applyReservationChanges` inside the checkout transaction (caller contract, TD-019).
+- **Wave 9 dispatch, cancellation and restock:** lock order and shipment rows first, then go through the
+  inventory services; dispatch writes a DISPATCH movement per shipment line (negative delta, on hand and
+  reserved both lowered). Real dispatch-versus-cancellation race tests are mandatory.
 
 ## Changes from the plan (all documented in the journal)
 

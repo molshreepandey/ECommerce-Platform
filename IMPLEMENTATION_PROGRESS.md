@@ -12,10 +12,10 @@ each entry was written; this list is the current status.
 - [x] Wave 2B — Identity, access, audit (commit `f2c40ab`; pushed to GitHub on 2026-11-10)
 - [x] Wave 3 — Modular catalogue (commits `24563ed`, `8b8ad00`, `800dd41`; pushed to GitHub on 2026-11-10)
 - [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10; `origin/main` is `e0c3895`)
-- [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: both migrations tested on
-      `ecommerce_test` and applied to development, which now records five migrations (development fingerprint
-      `9cec751c29cab1faab002a9308e23887`). Its files are staged locally, not committed or pushed. Inventory
-      services, APIs and UI are not started.
+- [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: commit `f6c018b`, pushed;
+      applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
+      inventory services (checkpoints 1–6): done and reviewed, **not committed**. Steps 3 (admin API) and 4
+      (admin pages) not started.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -1951,3 +1951,66 @@ no commit or push. Evidence and the full command log: `~/ecommerce-backups/20261
 
 **New development fingerprint baseline:** `9cec751c29cab1faab002a9308e23887` (47 tables) from now on. The
 previous `04adce08…` is the state before these migrations.
+
+## Wave 5 step 2: inventory services (2026-11-10 to 2026-11-11, checkpoints 1–6 done; awaiting owner review, not committed)
+
+Owner-approved plan with five decisions, four improvements, four follow-up decisions and the L0b lock-order
+correction, implemented in six approved checkpoints, each stopped for review. Not done, by instruction: no
+HTTP routes or pages, no dispatch, cancellation or order code, no schema or migration change, no write to
+development, no commit or push. Rules and the caller contract: TD-019; ledger and idempotency: TD-018.
+
+### What was built
+
+| Checkpoint | Scope                                                                                                                                       | New tests                 |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| 1          | input schemas, errors, `InventoryActor` mapping, stock rules, request fingerprint, 10 audit actions                                         | 49 unit                   |
+| 2          | repositories, lock helpers, runtime lock-order tracker, real-staff fixtures, warehouse service                                              | 7 unit, 35 integration    |
+| 3          | idempotency wrapper, add / remove / set (ADJUSTMENT), receipts (RECEIPT), low-stock thresholds                                              | 3 unit, 43 integration    |
+| 4          | internal `reserveStock`, `releaseReservation`, `applyReservationChanges` (L0b first)                                                        | 1 unit, 27 integration    |
+| 5          | stock matrix, low-stock list and count, ledger, storefront availability, catalogue stock filter (D30)                                       | 2 unit, 14 integration    |
+| 6          | TD-019, this entry, traceability (R11, R13, T5, T8, A2, S4, L35–L50), testing strategy, architecture, database design, handoff, full review | none (documentation only) |
+
+Files: `src/modules/inventory/` (29 files, 6 of them unit tests); changes to `audit.types.ts`,
+`identity.schema.ts` (pincode rule extracted for reuse, behaviour identical on 16 inputs),
+`search-outbox.repository.ts` (two enqueue helpers) and `catalogue/product-list-query.ts` (stock filter uses
+the inventory definition); integration tests `warehouses`, `inventory-locks`, `stock-adjustments`,
+`stock-idempotency`, `low-stock-thresholds`, `stock-reservations`, `inventory-queries`, one added catalogue
+test, and support files `inventory-fixtures.ts` and `lock-probes.ts`.
+
+### Tests (Node v26.13.0, guarded `ecommerce_test` only)
+
+| Suite                                   | Before step 2 | After checkpoint 5 (2026-11-11)                                           |
+| --------------------------------------- | ------------- | ------------------------------------------------------------------------- |
+| `npm test`                              | 270           | **332 / 332**                                                             |
+| `npm run test:integration`              | 230           | **349 / 349**                                                             |
+| `npm run test:http`, `npm run test:e2e` | 56, 52        | not re-run (no route or page changed); last 56 / 56 and 52 / 52 in step 1 |
+
+Repeat runs (each five times in a row, every run green): checkpoint 2 lock and warehouse files (35 tests),
+checkpoint 3 adjustment, idempotency and threshold files (43), checkpoint 4 reservation file (27). Mutation
+checks: removing the per-shipment release check made 4 reservation tests fail (after bystander reservations
+were added to three tests that had passed without it); restoring the old catalogue stock filter made the new
+inactive-warehouse test fail; each file was restored byte for byte. The app's reason rule was compared with
+the database rule on 23 samples across scripts: never looser (0 unsafe), stricter in 2.
+
+Checkpoint 6 changed documentation only and wrote to no database, so the integration, HTTP and browser
+suites were not run in it; unit tests, format, lint and typecheck were (see the checkpoint 6 report). A
+checksum manifest of `src/`, `tests/`, `e2e/` and `prisma/` (432 files) was identical at the start and end of
+checkpoint 6.
+
+### Full review (checkpoint 6, read-only)
+
+| Area                | Result                                                                                                                                                                                                   |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lock hierarchy      | every service follows it in source order: adjustments and receipts L1 → L5; thresholds L2 → L3 → L5; reservations L0b → L2 → L3 → L4 → L5; warehouses L4; guarded updates only after their row is locked |
+| Movement writers    | `insertMovements` is the only runtime writer and is called only by the adjustment, receipt and reservation services; the seed writes history directly (L49)                                              |
+| Raw SQL             | tagged templates and `Prisma.sql` fragments only; no `*Unsafe` call or `Prisma.raw` in `src/`                                                                                                            |
+| Read services       | no insert, update, delete or row lock in the query repository, service or availability module                                                                                                            |
+| Index use           | `EXPLAIN` (read-only, development): low-stock query uses `inventory_levels_low_stock_idx`; ledger uses its `(created_at, id)` indexes                                                                    |
+| Casts               | none in the inventory module; two `?? ''` fallbacks cannot pass silently (a missing movement throws; an empty uuid fails in SQL)                                                                         |
+| Issues              | none critical or high; medium: L38, L43, L47; low: L37, L41, L44, L45, L46, L49, L50 and bounded per-line queries (L41)                                                                                  |
+| Documentation fixes | the traceability matrix pointed at a missing `docs/test-evidence.md`; T8 and S4 now point at this journal and the testing strategy; ARCHITECTURE.md status line updated                                  |
+
+### Databases
+
+Development fingerprint `9cec751c29cab1faab002a9308e23887` throughout step 2 (five migrations; 405
+movements and 10 reserved units unchanged). Only `ecommerce_test` was written to, and only in checkpoints 1–5.

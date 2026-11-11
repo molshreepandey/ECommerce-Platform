@@ -2,12 +2,12 @@
 
 ## Suites
 
-| Suite       | Command                    | Runs against                                                   | What it proves                                                                                                                                                                                                                                                                                                                                                                             | Count (end of Wave 2B) |
-| ----------- | -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------- |
-| Unit        | `npm test`                 | nothing external                                               | pure logic: config and env validation, host routing, Money, health rule, rate-limit windows, CSP builder, origin check, test-target guard, session tokens, cookies, client IP, sign-in redirects, `?next=` safety, audit sanitiser, Argon2id, API client, navigation filter                                                                                                                | 159                    |
-| Integration | `npm run test:integration` | real Postgres (`ecommerce_test`) and Redis (`ecom:test:` keys) | database constraints, concurrent stock reservations, rate-limit stores, Redis outage fallback, harness safety, identity constraints, sessions and RBAC, registration and sign-in races, addresses under concurrency, audit rows, client-IP trust behind a proxy (forged `X-Forwarded-For`), catalogue services (validation, conflicts, locking, lifecycle, audit atomicity, RBAC per role) | 75                     |
-| HTTP        | `npm run test:http`        | running app (`npm run start:test`)                             | status codes, server-rendered 404s, security headers, health, identity APIs (cookies, origin check, error envelopes, account separation), sign-in redirects, forged `X-Forwarded-For` ignored when no proxy is trusted, catalogue admin API (auth, roles, validation, conflicts, concurrent edits)                                                                                         | 39                     |
-| Browser     | `npm run test:e2e`         | running app (Playwright starts it if needed)                   | real Chromium, desktop and 360 px: 404 pages, the full customer account journey, every staff role, keyboard sign-in, field errors, no horizontal overflow, no page errors, **no CSP violations**, catalogue admin workflow (new type → product → variants → image → activate → filter), read-only staff, stale-version conflict                                                            | 40                     |
+| Suite       | Command                    | Runs against                                                   | What it proves                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Count (Wave 5 step 2)       |
+| ----------- | -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| Unit        | `npm test`                 | nothing external                                               | pure logic: config and env validation, host routing, Money, health rule, rate-limit windows, CSP builder, origin check, test-target guard, session tokens, cookies, client IP, sign-in redirects, `?next=` safety, audit sanitiser, Argon2id, API client, navigation filter                                                                                                                                                                                                                                        | 332                         |
+| Integration | `npm run test:integration` | real Postgres (`ecommerce_test`) and Redis (`ecom:test:` keys) | database constraints, concurrent stock reservations, rate-limit stores, Redis outage fallback, harness safety, identity constraints, sessions and RBAC, registration and sign-in races, addresses under concurrency, audit rows, client-IP trust behind a proxy (forged `X-Forwarded-For`), catalogue services (validation, conflicts, locking, lifecycle, audit atomicity, RBAC per role); inventory: idempotent stock changes, reservations and releases under forced overlap, lock order, ledger reconciliation | 349                         |
+| HTTP        | `npm run test:http`        | running app (`npm run start:test`)                             | status codes, server-rendered 404s, security headers, health, identity APIs (cookies, origin check, error envelopes, account separation), sign-in redirects, forged `X-Forwarded-For` ignored when no proxy is trusted, catalogue admin API (auth, roles, validation, conflicts, concurrent edits)                                                                                                                                                                                                                 | 56 (last run Wave 5 step 1) |
+| Browser     | `npm run test:e2e`         | running app (Playwright starts it if needed)                   | real Chromium, desktop and 360 px: 404 pages, the full customer account journey, every staff role, keyboard sign-in, field errors, no horizontal overflow, no page errors, **no CSP violations**, catalogue admin workflow (new type → product → variants → image → activate → filter), read-only staff, stale-version conflict                                                                                                                                                                                    | 52 (last run Wave 5 step 1) |
 
 Rules from the plan: during development run only the test files touched; at the end of each wave run every
 suite (regression).
@@ -71,6 +71,34 @@ The one expected difference from the production build: the dev server's CSP incl
 
 Result at the end of Wave 2B: `test:http:dev` 39 / 39 (40 / 40 after final check 7), `test:e2e` on `next dev` 40 / 40 in three
 consecutive runs.
+
+## Inventory concurrency and lock-order tests (Wave 5)
+
+Inventory correctness depends on what happens when transactions overlap, so these tests force the overlap
+instead of hoping for it (`tests/integration/support/lock-probes.ts`, real Postgres, `ecommerce_test` only):
+
+- **Lock holders.** A test transaction takes a real row lock (a shipment, a product, a stock row) and keeps
+  it open while the service under test runs on another connection.
+- **Proof that something waits.** A third connection polls `pg_blocking_pids` until PostgreSQL itself
+  reports the service's backend blocked by the holder (and, for duplicates, the second request blocked by
+  the first), before the holder is released. No sleep decides the order.
+- **Proof of lock order.** While a service waits, `NOWAIT` probes from another connection show which rows it
+  already holds (the shipment) and which it has not touched yet (the stock row).
+- **First-transaction rollback.** The holder changes stock while two duplicate requests wait, so the first
+  fails and rolls back; the second must then run as a new request, and no request row may remain.
+- **Races with exact counts.** For example 20 one-unit reservations against 7 units reserve exactly 7, and
+  10 releases of one reserved unit succeed exactly once, with a bystander shipment's reservation on the same
+  row left untouched.
+- **Ledger reconciliation.** After concurrent mixes, the ledger's deltas equal the stock row's on hand and
+  reserved quantities.
+- **Mutation checks.** Before trusting a safety test, the guarded line is removed temporarily and the test
+  must fail; the file is then restored byte for byte. Wave 5: the per-shipment release check (4 tests fail
+  without it) and the catalogue stock filter (1 test fails with the old filter).
+- **Repeats.** Each concurrency file is run five times in a row before a checkpoint is reported.
+- **Real identities.** Inventory fixtures create real staff and customer rows (the older `staffWith()`
+  fixture uses ids that exist nowhere), because idempotent requests reference `staff_users`.
+- **Read-only checks.** Query tests compare a snapshot of stock rows, movements, request rows, audit rows,
+  the outbox and `updated_at` before and after every read.
 
 ## Browser-test notes (Next 16)
 

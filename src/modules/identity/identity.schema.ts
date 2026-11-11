@@ -10,6 +10,10 @@ export const indianMobileSchema = z
   .trim()
   .regex(/^[6-9]\d{9}$/, 'Enter a 10-digit mobile number starting with 6, 7, 8 or 9');
 export const fullNameSchema = z.string().trim().min(2, 'Enter your full name').max(100);
+export const indianPincodeSchema = z
+  .string()
+  .trim()
+  .regex(/^[1-9]\d{5}$/, 'Enter a 6-digit pincode');
 
 export const registerCustomerSchema = z.strictObject({
   fullName: fullNameSchema,
@@ -42,10 +46,7 @@ export const addressFieldsSchema = z.strictObject({
   landmark: optionalText(100),
   city: z.string().trim().min(2, 'Enter the city').max(100),
   state: z.string().trim().min(2, 'Enter the state').max(100),
-  pincode: z
-    .string()
-    .trim()
-    .regex(/^[1-9]\d{5}$/, 'Enter a 6-digit pincode'),
+  pincode: indianPincodeSchema,
 });
 export const createAddressSchema = addressFieldsSchema.extend({
   isDefault: z.boolean().optional(),

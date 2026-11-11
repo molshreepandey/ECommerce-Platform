@@ -391,4 +391,31 @@ describe('listing products', () => {
     );
     expect(outOfStock.items.map(({ slug }) => slug).sort()).toEqual(['empty', 'no-variants']);
   });
+
+  it('does not count stock in an inactive warehouse as in stock (the inventory definition, D30)', async () => {
+    const { productType, brand } = await setUp();
+    const stranded = await createTestProduct({
+      productTypeId: productType.id,
+      brandId: brand.id,
+      slug: 'stranded',
+    });
+    await stockOneVariant(stranded.id, 'STRANDED-M', 8);
+    await database.warehouse.update({ where: { code: 'WH-TEST' }, data: { isActive: false } });
+    const inStock = await listProducts(
+      supportStaff,
+      listProductsSchema.parse({ stock: 'IN_STOCK' }),
+    );
+    expect(inStock.items.map(({ slug }) => slug)).toEqual([]);
+    const outOfStock = await listProducts(
+      supportStaff,
+      listProductsSchema.parse({ stock: 'OUT_OF_STOCK' }),
+    );
+    expect(outOfStock.items.map(({ slug }) => slug)).toEqual(['stranded']);
+    await database.warehouse.update({ where: { code: 'WH-TEST' }, data: { isActive: true } });
+    const reactivated = await listProducts(
+      supportStaff,
+      listProductsSchema.parse({ stock: 'IN_STOCK' }),
+    );
+    expect(reactivated.items.map(({ slug }) => slug)).toEqual(['stranded']);
+  });
 });

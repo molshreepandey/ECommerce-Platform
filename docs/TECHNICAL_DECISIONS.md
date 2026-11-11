@@ -502,3 +502,128 @@ Migration `20261110093000_catalogue_integrity` (additive). Reverse script:
   before `db:deploy`. Inventory queries therefore keep the existing pattern: parameterised `$queryRaw`
   tagged templates whose rows are parsed with Zod at the repository boundary. Safety is the same (no string
   concatenation, typed results); revisit if CI is reordered.
+
+## TD-019 Inventory services: lock hierarchy, reservation contract and stock rules (Wave 5, step 2)
+
+Code: `src/modules/inventory/`. Builds on TD-018 (ledger rules, idempotent requests). No schema change.
+
+### Global lock hierarchy (owner-approved, including the L0b correction)
+
+Every transaction takes row locks from the top down only; it may skip levels but never goes back up, and
+within one level it locks keys in ascending order.
+
+| Level | Rows                        | Mode and order                                                                                      | Taken by                                                                      |
+| ----- | --------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| L0a   | `orders`                    | `FOR NO KEY UPDATE`, sorted by id                                                                   | order code (Waves 8–9) only; inventory never locks orders                     |
+| L0b   | `shipments`                 | `FOR NO KEY UPDATE`, sorted by id                                                                   | every reservation change (taken by inventory itself) and Wave 9 shipment code |
+| L1    | `inventory_change_requests` | the unique-key insert                                                                               | staff stock requests (add, remove, set, receipt)                              |
+| L2    | `products`                  | `FOR SHARE` (reservations, thresholds) / `FOR UPDATE` (catalogue writes, tagging, grouping), sorted | inventory and catalogue                                                       |
+| L3    | `product_variants`          | `FOR SHARE`, sorted; catalogue changes a variant only while holding its product at L2               | reservations, thresholds                                                      |
+| L4    | `warehouses`                | `FOR SHARE` (reservations) / `FOR NO KEY UPDATE` (edit, status), sorted                             | reservations, warehouse service                                               |
+| L5    | `inventory_levels`          | `FOR UPDATE`, sorted by `(variant_id, warehouse_id)`; created with `ON CONFLICT DO NOTHING`         | every stock change, thresholds, reservations and releases                     |
+| L6    | inserts                     | movements, audit rows, search outbox; no explicit locks                                             | after every level                                                             |
+
+Sequences: adjustments and receipts L1 → L5 → L6; thresholds L2 → L3 → L5; warehouse edit or status L4;
+reserve L0b → L2 → L3 → L4 → L5 → L6; release L0b → L5 → L6; a combined reserve-and-release call takes
+L0b for every shipment, then L2–L4 for the reserve lines, then L5 for every line.
+
+- **Foreign-key locks at L6.** Inserting a stock row or movement takes `FOR KEY SHARE` on its variant and
+  warehouse after L5. This cannot deadlock because nothing takes `FOR UPDATE`, changes the key of, or
+  deletes a variant or warehouse (checked by a lock scan in every review), and warehouse writes use
+  `FOR NO KEY UPDATE` on purpose. Reservations already hold `FOR SHARE` on the product, so the key-share
+  lock that a Wave 8 order-item insert takes on it never waits.
+- **Runtime enforcement.** Every inventory lock helper goes through a per-transaction tracker
+  (`lock-order.ts`) before any SQL: it refuses a lock that goes back up the hierarchy, a key that sorts
+  before one already held at the same level, any lock outside a transaction, and a guarded stock update on
+  a row not locked first (`LockOrderViolation`). The tracker is keyed by the Prisma interactive-transaction
+  object, so it relies on Prisma passing one object per transaction callback (true for Prisma 7.10 and
+  verified on every service path); a Prisma upgrade must re-check this (L38).
+- **Catalogue code does not use the tracker.** It stays deadlock-free by the documented order (product
+  before variant, products in id order) and never locks warehouses or stock rows (L39).
+
+### Reservation and release caller contract (Waves 8–9)
+
+`reserveStock`, `releaseReservation` and `applyReservationChanges` are internal: no HTTP route, no staff
+permission check, and they run inside the caller's transaction, so any failure rolls the caller's whole
+transaction back.
+
+1. The caller may hold order (L0a) and shipment (L0b) locks when it calls, and no other inventory lock
+   (L1–L5); it takes no new L0–L5 lock afterwards (it may still update rows it already holds, such as the
+   shipment status).
+2. Inventory locks the referenced shipments itself as its first step, whether or not the caller did
+   (re-locking a held row never waits).
+3. The shipment rows must already exist and each line's warehouse must be the shipment's warehouse
+   (otherwise 422 `RESERVATION_REFERENCE_INVALID`): Wave 8 checkout inserts the order and its shipments
+   before it reserves.
+4. Anything that both releases and reserves (re-allocation) uses one `applyReservationChanges` call; one
+   call never reserves and releases the same shipment, variant and warehouse.
+5. The caller authorises the action (for example `orders.write` for a staff cancellation) and decides
+   whether the shipment's status allows it: inventory does not check shipment status (L47).
+6. Wave 9 dispatch and restock must follow the same order: lock the order (if needed) and the shipment,
+   then the stock rows; dispatch lowers on hand and reserved together with a DISPATCH movement whose delta
+   is the negative quantity, referencing the shipment.
+
+### Reservation rules
+
+- **Reserve** needs an ACTIVE product, an ACTIVE variant and an active warehouse (422
+  `VARIANT_NOT_RESERVABLE` / `WAREHOUSE_INACTIVE`), then `reserved += q` only while
+  `on_hand − reserved ≥ q` (409 `OUT_OF_STOCK`). Concurrent reservations never oversell (guarded update
+  plus the CHECK).
+- **Release** locks the shipment, then the stock row, then computes what is still reserved for that exact
+  shipment, variant and warehouse: the sum of RESERVE (+), RELEASE (−) and DISPATCH (−) deltas. A release
+  above it is refused (409 `RESERVATION_EXCEEDED`), so a duplicate or excessive release, or one that would
+  take another shipment's units, never changes anything; `reserved −= q WHERE reserved ≥ q` and the CHECK
+  back this up. Releases are allowed for archived products and variants and inactive warehouses, so stock
+  can always be freed. Concurrent releases queue on the stock-row lock and the second recomputes.
+- Deactivating a warehouse, or archiving a product or variant, never releases or changes a reservation.
+- Only these services write reservation movements (`insertMovements` is called only by the adjustment,
+  receipt and reservation services); the seed writes its own historical movements (L49).
+
+### Stock rules
+
+- **Available stock** is the generated column `available_quantity = on_hand_quantity − reserved_quantity`;
+  application code never recomputes it.
+- **Adjustments and receipts** are allowed for archived products and variants and inactive warehouses (the
+  goods are physically there). Add and remove are ADJUSTMENT movements (`inventory.stock_added`,
+  `inventory.stock_removed`); set needs the expected previous quantity (409 `STALE_STOCK`) and is an
+  ADJUSTMENT (`inventory.stock_set`); removing below reserved is refused (409 `STOCK_BELOW_RESERVED`); a
+  change of zero is refused before any transaction (422 `NO_STOCK_CHANGE`). A supplier receipt is always
+  RECEIPT (`inventory.stock_received`) with the supplier reference as its reason. Idempotency: TD-018.
+- **Thresholds** change only `low_stock_threshold` (no movement, no idempotency key): an archived product
+  or variant may only clear to 0 (422 `THRESHOLD_NOT_ALLOWED`); inactive warehouses are allowed; a missing
+  row is created at 0/0 for an eligible positive value; clearing a missing row is a no-op.
+- **Low stock** means `low_stock_threshold > 0` and `available_quantity ≤ low_stock_threshold` (the
+  partial index predicate), excluding archived products and variants, and inactive warehouses unless
+  `includeInactiveWarehouses` is set. The stock matrix's low-stock flag uses the same rule.
+- **Countable and sellable stock** have one definition (`stock-availability.ts`): stock rows in active
+  warehouses, and of those the ones with available quantity. Storefront availability and the admin
+  catalogue "in stock" filter both use it (D30), so they cannot disagree.
+
+### Queries (read-only, `inventory.read` at the service boundary)
+
+- **Stock matrix**: paged by product `(name, id)`; variants by `(sku, id)`; stock rows by warehouse
+  `(priority, code, id)`. It returns existing stock rows only (the UI shows a missing combination as 0);
+  a warehouse filter limits the rows shown, not the products listed; archived items and inactive
+  warehouses are shown with their status. Search matches product names and SKUs ignoring case, with `%`
+  and `_` as plain characters.
+- **Low-stock list and count**: ordered by `(warehouse, variant)` (the partial index order); cursor
+  `warehouseId/variantId`.
+- **Ledger**: newest first by `(created_at DESC, id DESC)`; the cursor is a movement id whose exact
+  timestamp is looked up in SQL, so rows sharing a microsecond are never skipped or repeated. Each row
+  carries before-values derived from its after-values (TD-018 convention), SKU, product, warehouse code,
+  actor and reference.
+- An unknown cursor returns an empty page (L37).
+
+### Actors and audit
+
+`InventoryActor` is STAFF, CUSTOMER or SYSTEM; `actorColumns()` gives both the movement row and its audit
+row their actor, so a customer or system action never carries a staff id (system rows have a null actor id
+and name their process in the audit row). Every movement has exactly one audit row (entity
+`inventory_movement`); thresholds are audited as `inventory_level` (`variantId/warehouseId`), warehouses as
+`warehouse`. Warehouse edits: last save wins with both saves audited (owner decision, L42).
+
+### Risks and where they belong
+
+L35–L50 in `docs/REQUIREMENTS_TRACEABILITY.md`; the mandatory ones: real dispatch and cancellation race
+tests (Wave 9), the tracker identity check before checkout relies on it (Wave 8), and realistic-volume
+query and index checks (Wave 14).

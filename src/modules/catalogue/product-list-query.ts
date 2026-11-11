@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { Prisma } from '@/generated/prisma/client';
+import { sellableStockWhere } from '@/modules/inventory/stock-availability';
 
 import { CatalogueValidationError } from './catalogue.errors';
 import type { ListProductsInput } from './catalogue.schema';
@@ -20,9 +21,11 @@ function decodeListCursor(encoded: string): ListCursor {
   }
 }
 
+// In stock = an active variant with sellable stock as the inventory module defines it (available
+// quantity in an active warehouse), so the filter and inventory availability can never disagree.
 const sellableStock = {
   status: 'ACTIVE',
-  inventoryLevels: { some: { availableQuantity: { gt: 0 } } },
+  inventoryLevels: { some: sellableStockWhere },
 } as const satisfies Prisma.ProductVariantWhereInput;
 
 function filterWhere(input: ListProductsInput): Prisma.ProductWhereInput {
