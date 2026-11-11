@@ -556,7 +556,10 @@ transaction back.
    (otherwise 422 `RESERVATION_REFERENCE_INVALID`): Wave 8 checkout inserts the order and its shipments
    before it reserves.
 4. Anything that both releases and reserves (re-allocation) uses one `applyReservationChanges` call; one
-   call never reserves and releases the same shipment, variant and warehouse.
+   call never reserves and releases the same shipment, variant and warehouse. Within the call, lines are
+   applied per stock row with every RELEASE before any RESERVE (then by shipment id), so a re-allocation on
+   one row can reserve the units it frees (N1). The lock order is unaffected: each lock helper sorts its own
+   keys.
 5. The caller authorises the action (for example `orders.write` for a staff cancellation) and decides
    whether the shipment's status allows it: inventory does not check shipment status (L47).
 6. Wave 9 dispatch and restock must follow the same order: lock the order (if needed) and the shipment,

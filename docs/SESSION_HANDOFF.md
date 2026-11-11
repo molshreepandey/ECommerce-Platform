@@ -1,10 +1,10 @@
 # Session handoff
 
-Updated 2026-11-11 at the end of Wave 5 step 2, checkpoint 6. Resume from exactly this state. Do **not**
+Updated 2026-11-11 after the Wave 5 step 2 commit (`ef16d46`, local, not pushed). Resume from exactly this state. Do **not**
 recreate the project, reset any database, commit, push, or start Wave 5 step 3 (admin API) or any later
 work without the owner's explicit approval.
 
-## Latest: Wave 5 step 2, inventory services (2026-11-11, checkpoints 1–6 done, NOT committed)
+## Latest: Wave 5 step 2, inventory services (2026-11-11, commit `ef16d46`, not pushed)
 
 - `src/modules/inventory/`: warehouses; idempotent staff stock changes (add, remove, set as ADJUSTMENT;
   supplier receipts as RECEIPT); low-stock thresholds; internal `reserveStock`, `releaseReservation` and
@@ -14,13 +14,16 @@ work without the owner's explicit approval.
   L4 warehouses → L5 stock rows → inserts) and the **reservation caller contract**: TD-019. Journal:
   "Wave 5 step 2". Limitations L35–L50 (mandatory: L40 dispatch races in Wave 9, L38 tracker check before
   Wave 8, L41 volume checks in Wave 14).
-- Tests: 332 unit, 349 integration (after checkpoint 5); HTTP 56 and browser 52 last run in step 1 (no
-  route or page changed since) and must be re-run before this step is committed. No schema or migration
+- Final review finding N1 fixed: in one `applyReservationChanges` call, every RELEASE on a stock row is
+  applied before any RESERVE on it (then by shipment id), so a re-allocation can reserve the units it
+  frees; the lock hierarchy is unchanged. Two regression tests cover both shipment-id orders.
+- Full regression (2026-11-11, guarded `ecommerce_test`): 332 unit, 351 integration, 56 HTTP and 52
+  browser tests pass; build, format, lint, typecheck and `git diff --check` pass. No schema or migration
   change. Development untouched: fingerprint still `9cec751c29cab1faab002a9308e23887`.
-- Working tree: the step 2 code, tests and docs are **uncommitted** (HEAD `f6c018b`).
-- Next: owner review of the checkpoint 6 report; with approval, run the full regression on
-  `ecommerce_test`, commit step 2, then plan step 3 (admin API: `Idempotency-Key` header, schemas at the
-  boundary, retryable transaction-timeout error, aligned quantity limits, cursor validation).
+- Git: committed locally as `ef16d46` (50 files, parent `f6c018b`), followed by a documentation-only
+  commit recording the N1 fix and the regression; neither is pushed.
+- Next: the owner's approval to push, then plan step 3 (admin API: `Idempotency-Key` header, schemas at
+  the boundary, retryable transaction-timeout error, aligned quantity limits, cursor validation).
 
 ## Wave 5 step 1, inventory ledger migration foundation (2026-11-10, commit `f6c018b`, pushed)
 
@@ -97,18 +100,18 @@ work without the owner's explicit approval.
 - **Waves 1–4 are finished, committed and pushed.** Wave 2B includes final check 7 (client IP behind
   proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
 - **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
-  development; step 2 (inventory services) is done and reviewed but uncommitted; steps 3 (admin API) and 4
+  development; step 2 (inventory services) is committed locally (`ef16d46`) but not pushed; steps 3 (admin API) and 4
   (admin pages) are not started.
 
 ## Git state (2026-11-11, Wave 5 step 2)
 
-| Item                      | Value                                                                                                                                              |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                                                                                             |
-| HEAD                      | `f6c018b` (Wave 5 step 1), parent `e0c3895` (Wave 4)                                                                                               |
-| Relative to `origin/main` | up to date (0 ahead); pushed on 2026-11-10 as a fast-forward `e0c3895..f6c018b`                                                                    |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1) |
-| Working tree              | Wave 5 step 2 code, tests and docs modified or new, not staged and not committed                                                                   |
+| Item                      | Value                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Branch                    | `main`                                                                                                                                                 |
+| HEAD                      | the documentation follow-up to Wave 5 step 2; its parent is `ef16d46` (Wave 5 step 2), whose parent is `f6c018b` (Wave 5 step 1)                       |
+| Relative to `origin/main` | 2 ahead (`ef16d46` and the documentation follow-up), not pushed; `origin/main` is `f6c018b`, pushed on 2026-11-10 as a fast-forward `e0c3895..f6c018b` |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1)     |
+| Working tree              | clean                                                                                                                                                  |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -171,26 +174,28 @@ New files in the commit (106), by folder:
 Check 7 added `tests/http/client-ip.http.test.ts`, `tests/integration/client-ip-trust.test.ts` and the
 `docs/DEPLOYMENT_GUIDE.md` change; `src/lib/client-ip.ts` and its test were already new in Wave 2B.
 
-## Latest passing tests (final regression, 2026-11-10 08:59–09:02 UTC, Node v26.13.0)
+## Latest passing tests (Wave 5 step 2 full regression, 2026-11-11, Node v26.13.0)
 
 Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell here starts on v20).
 
 | Command                                              | Result                     |
 | ---------------------------------------------------- | -------------------------- |
 | `npm run format:check`, `lint`, `typecheck`, `build` | all exit 0                 |
-| `npm test`                                           | 179 / 179                  |
-| `npm run test:integration`                           | 83 / 83                    |
-| `npm run test:http` (production build)               | 40 / 40                    |
-| `npm run test:e2e` (production build)                | 40 / 40 (desktop + 360 px) |
-| `npm run test:http:dev` (dev server, test DB)        | 40 / 40                    |
-| `npm run test:e2e` on the dev server                 | 40 / 40                    |
+| `git diff --check`                                   | clean                      |
+| `npm test`                                           | 332 / 332                  |
+| `npm run test:integration`                           | 351 / 351                  |
+| `npm run test:http` (production build)               | 56 / 56                    |
+| `npm run test:e2e` (production build)                | 52 / 52 (desktop + 360 px) |
 
-After the regression only documentation changed (journal, traceability, testing strategy, this file).
+The dev-server variants (`npm run test:http:dev`, `npm run test:e2e` on `next dev`) were not part of this
+regression; they last ran in the 2026-11-10 regression (40 / 40 each). After the regression only
+documentation changed (journal, handoff, testing strategy, traceability, TD-019).
 
 ## Databases and services
 
 - **Development database `ecommerce`:** fingerprint `9cec751c29cab1faab002a9308e23887` (47 tables, 1,629
-  rows) since the Wave 5 inventory ledger migrations on 2026-11-10; five migrations recorded.
+  rows) since the Wave 5 inventory ledger migrations on 2026-11-10; five migrations recorded. Unchanged
+  through Wave 5 step 2 and its full regression (re-checked read-only on 2026-11-11).
   - Before those migrations: `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627 rows), since the catalogue
     integrity migration on 2026-11-10.
   - Before that migration: `3a6b72f9d53ed06b19f3f136d24b84a6` (unchanged from Wave 2B Step B until then).
@@ -222,13 +227,13 @@ not a database result.
 
 ## Pending items
 
-| #   | Item                                             | Status                                          |
-| --- | ------------------------------------------------ | ----------------------------------------------- |
-| 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)          |
-| 2   | Wave 5 step 2 inventory services                 | done and reviewed (checkpoint 6); not committed |
-| 3   | Full regression and commit of step 2             | awaiting the owner's approval                   |
-| 4   | Wave 5 steps 3–4 (admin API and pages)           | not approved yet                                |
-| 5   | Push to GitHub                                   | up to `f6c018b`; step 2 not pushed              |
+| #   | Item                                             | Status                                                             |
+| --- | ------------------------------------------------ | ------------------------------------------------------------------ |
+| 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)                             |
+| 2   | Wave 5 step 2 inventory services                 | done; N1 fixed; committed locally (`ef16d46`)                      |
+| 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser)   |
+| 4   | Wave 5 steps 3–4 (admin API and pages)           | not approved yet                                                   |
+| 5   | Push to GitHub                                   | up to `f6c018b`; step 2 and its documentation follow-up not pushed |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
@@ -240,11 +245,10 @@ Deployment requirement (not a finished production setting): staging and producti
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD is `f6c018b` and equals `origin/main`; the Wave 5 step 2 files are
-   uncommitted in the working tree; the development fingerprint is `9cec751c…`; both databases record five
-   migrations; three healthy containers.
-2. Wait for the owner's approval before running the full regression (it writes to `ecommerce_test`),
-   committing, pushing, or starting Wave 5 step 3. Do not seed development, or reset or truncate any
+1. Check that nothing changed: `main` is two commits ahead of `origin/main` (`f6c018b`): `ef16d46` (Wave 5
+   step 2) and its documentation follow-up; the working tree is clean; the development fingerprint is
+   `9cec751c…`; both databases record five migrations; three healthy containers.
+2. Wait for the owner's approval before pushing or starting Wave 5 step 3. Do not seed development, or reset or truncate any
    database without explicit approval.
 
 ## Rules still in force

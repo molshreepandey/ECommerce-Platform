@@ -14,8 +14,8 @@ each entry was written; this list is the current status.
 - [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10; `origin/main` is `e0c3895`)
 - [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: commit `f6c018b`, pushed;
       applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
-      inventory services (checkpoints 1–6): done and reviewed, **not committed**. Steps 3 (admin API) and 4
-      (admin pages) not started.
+      inventory services: commit `ef16d46` (local, **not pushed**), after the N1 fix and a full regression
+      (332 unit, 351 integration, 56 HTTP, 52 browser). Steps 3 (admin API) and 4 (admin pages) not started.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -1952,12 +1952,13 @@ no commit or push. Evidence and the full command log: `~/ecommerce-backups/20261
 **New development fingerprint baseline:** `9cec751c29cab1faab002a9308e23887` (47 tables) from now on. The
 previous `04adce08…` is the state before these migrations.
 
-## Wave 5 step 2: inventory services (2026-11-10 to 2026-11-11, checkpoints 1–6 done; awaiting owner review, not committed)
+## Wave 5 step 2: inventory services (2026-11-10 to 2026-11-11, done; commit `ef16d46`, not pushed)
 
 Owner-approved plan with five decisions, four improvements, four follow-up decisions and the L0b lock-order
 correction, implemented in six approved checkpoints, each stopped for review. Not done, by instruction: no
 HTTP routes or pages, no dispatch, cancellation or order code, no schema or migration change, no write to
-development, no commit or push. Rules and the caller contract: TD-019; ledger and idempotency: TD-018.
+development, no push. Committed locally as `ef16d46` after the N1 fix and a full regression, both
+approved by the owner. Rules and the caller contract: TD-019; ledger and idempotency: TD-018.
 
 ### What was built
 
@@ -1979,11 +1980,12 @@ test, and support files `inventory-fixtures.ts` and `lock-probes.ts`.
 
 ### Tests (Node v26.13.0, guarded `ecommerce_test` only)
 
-| Suite                                   | Before step 2 | After checkpoint 5 (2026-11-11)                                           |
-| --------------------------------------- | ------------- | ------------------------------------------------------------------------- |
-| `npm test`                              | 270           | **332 / 332**                                                             |
-| `npm run test:integration`              | 230           | **349 / 349**                                                             |
-| `npm run test:http`, `npm run test:e2e` | 56, 52        | not re-run (no route or page changed); last 56 / 56 and 52 / 52 in step 1 |
+| Suite                      | Before step 2 | After checkpoint 5 (2026-11-11)       | Full regression before the commit (2026-11-11) |
+| -------------------------- | ------------- | ------------------------------------- | ---------------------------------------------- |
+| `npm test`                 | 270           | **332 / 332**                         | **332 / 332**                                  |
+| `npm run test:integration` | 230           | **349 / 349**                         | **351 / 351** (2 N1 regression tests added)    |
+| `npm run test:http`        | 56            | not re-run (no route or page changed) | **56 / 56** (production build)                 |
+| `npm run test:e2e`         | 52            | not re-run (no route or page changed) | **52 / 52** (desktop and 360 px)               |
 
 Repeat runs (each five times in a row, every run green): checkpoint 2 lock and warehouse files (35 tests),
 checkpoint 3 adjustment, idempotency and threshold files (43), checkpoint 4 reservation file (27). Mutation
@@ -2010,7 +2012,39 @@ checkpoint 6.
 | Issues              | none critical or high; medium: L38, L43, L47; low: L37, L41, L44, L45, L46, L49, L50 and bounded per-line queries (L41)                                                                                  |
 | Documentation fixes | the traceability matrix pointed at a missing `docs/test-evidence.md`; T8 and S4 now point at this journal and the testing strategy; ARCHITECTURE.md status line updated                                  |
 
+### Final review finding N1 and fix (2026-11-11)
+
+The final read-only review found one medium issue, N1: `applyReservationChanges` applied the lines on one
+stock row in shipment-id order, so a RESERVE could run before a RELEASE on the same row when the reserving
+shipment's id sorted first. With nothing else available, a valid re-allocation (release 2 from shipment B,
+reserve 2 for shipment A, same variant and warehouse) failed with 409 `OUT_OF_STOCK`.
+
+- Fix (`reservation.service.ts`, `lineOrder` only): lines are applied by stock key, then kind (every
+  RELEASE before any RESERVE on the same stock row), then shipment id. The lock hierarchy is unchanged: each
+  lock helper sorts its own keys, so the comparator only decides the order in which lines are applied.
+  Guarded updates, per-shipment release limits, shipment checks and standalone reserve and release calls
+  are unchanged.
+- Regression tests (`stock-reservations.test.ts`, two cases): 4 on hand, 2 reserved for B and 2 for an
+  unrelated shipment C (0 available); one call releases 2 from B and reserves 2 for A, once with A's id
+  sorting before B's and once after. Both pass: RELEASE takes reserved from 4 to 2, then RESERVE from 2 to
+  4; the stock row ends at 4 on hand and 4 reserved; four movements and four audit rows match; per shipment
+  the ledger holds A 2, B 0 and C 2 (C untouched).
+- Mutation check: with the old comparator restored temporarily, the case where A's id sorts first failed
+  and the other passed; the fixed file was then restored byte for byte.
+
+### Full regression and commit (2026-11-11)
+
+Node v26.13.0, each suite run one after another on the guarded `ecommerce_test` (test target and guard
+checked first): `npm run test:integration` 351 / 351; `npm run build`, then `npm run start:test` (resets
+`ecommerce_test` to the demo identity seed, as documented); `npm run test:http` 56 / 56; `npm run test:e2e`
+52 / 52; `npm test` 332 / 332; `npm run format:check`, `npm run lint`, `npm run typecheck` and
+`git diff --check` all exit 0. No test failed or was skipped. Committed as `ef16d46` ("Wave 5 step 2:
+inventory services, reservations and query layer", 50 files, parent `f6c018b`); not pushed.
+
 ### Databases
 
-Development fingerprint `9cec751c29cab1faab002a9308e23887` throughout step 2 (five migrations; 405
-movements and 10 reserved units unchanged). Only `ecommerce_test` was written to, and only in checkpoints 1–5.
+Development fingerprint `9cec751c29cab1faab002a9308e23887` throughout step 2, including the full regression
+(five migrations; 405 movements and 10 reserved units unchanged). During the regression a read-only
+snapshot of the development migrations and per-table insert, update and delete counters was identical
+before and after, and the fingerprint query in `docs/SESSION_HANDOFF.md` still matched afterwards. Only `ecommerce_test` was
+written to: in checkpoints 1–5, the N1 tests and the full regression.
