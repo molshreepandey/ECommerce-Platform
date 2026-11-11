@@ -1,10 +1,10 @@
 # Architecture
 
 Status: Waves 1–4 are built (foundation, platform, identity and audit, catalogue, categories, tagging and
-product groups). Wave 5 is in progress: the inventory ledger migrations and the inventory services are in
-place; its admin API and pages are not built yet. Business modules live in `src/modules/<name>/` as
-`*.service.ts` (transactions, rules) over `*.repository.ts` (Prisma only); route handlers in `src/app/api/`
-stay thin.
+product groups). Wave 5 is in progress: the inventory ledger migrations, the inventory services and the
+admin inventory API (step 3, TD-020) are in place; its admin pages are not built yet. Business modules
+live in `src/modules/<name>/` as `*.service.ts` (transactions, rules) over `*.repository.ts` (Prisma
+only); route handlers in `src/app/api/` stay thin.
 
 ## Big picture
 

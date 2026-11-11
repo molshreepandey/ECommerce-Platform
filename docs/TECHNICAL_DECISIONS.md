@@ -615,7 +615,8 @@ transaction back.
   timestamp is looked up in SQL, so rows sharing a microsecond are never skipped or repeated. Each row
   carries before-values derived from its after-values (TD-018 convention), SKU, product, warehouse code,
   actor and reference.
-- An unknown cursor returns an empty page (L37).
+- A cursor must name an existing row: an unknown stock-matrix or ledger cursor is 400 `INVALID_CURSOR`
+  (since Wave 5 step 3, TD-020; it used to return an empty page).
 
 ### Actors and audit
 
@@ -627,6 +628,91 @@ and name their process in the audit row). Every movement has exactly one audit r
 
 ### Risks and where they belong
 
-L35–L50 in `docs/REQUIREMENTS_TRACEABILITY.md`; the mandatory ones: real dispatch and cancellation race
+Still open from this step: L35, L36, L38–L43 and L46–L50 in `docs/REQUIREMENTS_TRACEABILITY.md` (L37,
+L44 and L45 were resolved in Wave 5 step 3, TD-020; the API's own limitations are listed there); the
+mandatory ones: real dispatch and cancellation race
 tests (Wave 9), the tracker identity check before checkout relies on it (Wave 8), and realistic-volume
 query and index checks (Wave 14).
+
+## TD-020 Admin inventory API (Wave 5, step 3)
+
+Routes: `src/app/api/admin/warehouses/**` and `src/app/api/admin/inventory/**` (API_DOCUMENTATION.md,
+"Admin: warehouses and inventory"). They are thin. Every handler runs, in this order: the origin check for
+state-changing methods (`apiHandler`), session authentication and the permission check
+(`requirePermission`), the inventory write rate limit (`limitInventoryWrites`, write routes only), the
+`Idempotency-Key` header (adjustments and receipts only), input validation (path id, query or body), and
+then one TD-019 service call, which checks the permission again. No business rule lives in a route, and
+no schema or migration changed.
+
+- **Permissions:** `inventory.read` for every read, `inventory.write` for adjustments, receipts and
+  thresholds, `warehouses.write` for warehouse create, edit and status. Routes call `requirePermission`
+  before reading the body; the services check again (`assertStaffPermission`), so the service check stays
+  authoritative. Roles with read-only inventory access (support, catalogue manager, order operations) are
+  refused every write.
+- **One adjustment route:** `POST /api/admin/inventory/adjustments` takes a body discriminated by
+  `operation` (`ADD`, `REMOVE`, `SET`; `stockAdjustmentSchema`). The route strips `operation` and calls
+  `addStock`, `removeStock` or `setStock`, so the idempotency fingerprint stays the service's own operation
+  name plus its validated input (TD-018). Receipts have their own route.
+- **`Idempotency-Key` header:** required on adjustments and receipts and checked before the body
+  (`src/lib/request-idempotency.ts`, reusable for checkout in Wave 8): missing 400
+  `IDEMPOTENCY_KEY_REQUIRED`, malformed 400 `IDEMPOTENCY_KEY_INVALID`. A new request answers 201; a replay
+  answers 200 with the original `stockRequest` and `replayed: true`; a different body or operation under
+  the same key answers 422 `IDEMPOTENCY_KEY_REUSED`. Thresholds, warehouse edits and warehouse status need
+  no key: repeating them sets the same values again and changes nothing. Warehouse create has no key
+  either: a repeated create is refused as a safe duplicate (409 `WAREHOUSE_CODE_TAKEN`, nothing written),
+  which is not a replay of the original response; a client that lost the first response reads the
+  warehouse back by its code.
+- **Transaction timeout (L43):** only the two genuine transaction timeouts are answered 503
+  `TRANSACTION_TIMEOUT` with `Retry-After: 1` and `details.retryable`, for every route: an interactive
+  transaction that outlived its 5-second timeout and was rolled back ("… cannot be executed on an expired
+  transaction"), and one that could not start within Prisma's 2-second `maxWait` ("Unable to start a
+  transaction in the given time"); in both nothing was committed. Prisma uses the same code P2028 for other
+  transaction-manager errors (a query on an already committed or rolled-back transaction, nested
+  transactions, internal consistency errors), so `isTransactionTimeout` matches the message, not just the
+  code (measured in Prisma 7.10.1; an upgrade must re-check it). Every other P2028 stays a 500
+  `INTERNAL_ERROR` logged at error level; a genuine timeout is logged at warn with Prisma's original
+  message, which is never sent to the client. Measured: a stock request blocked on a locked stock row for
+  5.5 seconds fails with the expired-transaction error and changes nothing, in the service and over
+  HTTP.
+- **On-hand ceiling (L44):** add and receipt refuse to take a stock row above 1,000,000 on hand, the same
+  limit set already had (422 `ON_HAND_LIMIT_EXCEEDED`), checked on the locked row; removals are always
+  allowed. This also means the integer column can no longer overflow (a 500 before).
+- **Input validated inside the services (L45, L53):** `receiveStock` parses its input with
+  `receiveStockSchema` again, and `addStock`, `removeStock` and `setStock` parse theirs with
+  `addStockSchema`, `removeStockSchema` and `setStockSchema` (strict, trimmed), so a fingerprint never
+  depends on how a caller built the input. The only callers in `src/` are the HTTP routes, which already
+  parse with the strict schemas. The zero-change check runs before that parse, so a zero change keeps its
+  documented 422 `NO_STOCK_CHANGE`; anything else invalid is 400 `VALIDATION_FAILED`.
+- **Letter case of ids:** `z.uuid()` accepts upper-case hex while PostgreSQL returns ids in lower case.
+  Receipts and thresholds compare their ids with ids read back from the database, so `receiveStockSchema`
+  and `setLowStockThresholdSchema` lower-case variant and warehouse ids (and both services parse again):
+  an existing variant sent in upper case works, a receipt naming one variant twice in different case is
+  400 ("Each variant once"), and a receipt retried with the same key in another case replays. Adjustments
+  keep the shared id schemas: they work with ids in any case, but the case is part of their idempotency
+  fingerprint, so a retry that changes only an id's case is 422 `IDEMPOTENCY_KEY_REUSED`, never applied
+  twice (L54). The shared schemas in `src/lib/ids.ts` are unchanged. Warehouse edits and status changes
+  write their audit row with the path id exactly as sent (`warehouse.service.ts`, `entityId: warehouseId`),
+  so an upper-case path id gives an upper-case `audit_logs.entity_id`, and a lookup by the lower-case id
+  does not find that row; the catalogue services record path ids the same way. Recorded as L55, not
+  changed in step 3.
+- **Cursors (L37):** an unknown stock-matrix or ledger cursor is 400 `INVALID_CURSOR`.
+- **Low stock** returns `totalCount` for the same filters next to the page (a second read-only query; L52).
+- **Write rate limit (L51):** every warehouse and stock write route calls `limitInventoryWrites(staff)`
+  right after `requirePermission`, before the `Idempotency-Key` and the body are read. It reuses the
+  Wave 2A limiter unchanged (Redis atomic counter, Postgres fallback, fixed windows) with a new action
+  `inventory-write`: one budget per staff member shared by all six write routes, 60 per 60 seconds in
+  development, staging and production (one write a second, while a receipt carries up to 100 lines), and
+  200 per 20 seconds in `config.test.json` (headroom for the HTTP suite, and a short window so the retry
+  test can wait it out). The identifier is the staff id, SHA-256 hashed into the bucket key, so neither
+  Redis nor Postgres stores it. Over the budget: the standard 429 `RATE_LIMITED` with `Retry-After` and
+  `details.retryAfterSeconds`; nothing is applied and no idempotency row is written, so a retry with the
+  same key after `Retry-After` applies once and later repeats replay. Anonymous and unauthorised calls are
+  refused (401, 403) before the budget is touched: tested by a read-only staff member who sends
+  `maxRequests + 1` writes alternating between the adjustments route and `PATCH /api/admin/warehouses/{id}`
+  and gets 403 for every one (never 429), then, granted `inventory.write` in the same session and
+  window, gets exactly `maxRequests` writes past the budget check (400 each) before the next is 429. So the
+  refused writes used none of the budget; reversing the order in either route makes the test fail
+  (mutation-checked). The other four write routes follow the same code order, verified by reading. Reads
+  are not limited. A replay counts as a write.
+- Not added: no reservation route (reservations stay internal, TD-019), no Redis in any stock path, no
+  change to the lock hierarchy.

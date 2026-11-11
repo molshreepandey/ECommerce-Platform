@@ -9,9 +9,12 @@ import { recordInventoryEvents } from './inventory-audit';
 import { inventoryErrors } from './inventory.errors';
 import {
   type AddStockInput,
+  addStockSchema,
   idempotencyKeySchema,
   type RemoveStockInput,
+  removeStockSchema,
   type SetStockInput,
+  setStockSchema,
 } from './inventory.schema';
 import { changeRequestReferenceType, insertMovements } from './inventory-movement.repository';
 import type { StockRequestOperation } from './request-fingerprint';
@@ -25,7 +28,7 @@ import {
 } from './stock-level.repository';
 import { assertStockLocationsExist } from './stock-locations';
 import type { StockRequestResult } from './stock-request-result';
-import { type AdjustmentPlan, adjustmentDelta } from './stock-rules';
+import { type AdjustmentPlan, adjustmentDelta, assertWithinOnHandLimit } from './stock-rules';
 
 type AdjustmentRequest =
   | { operation: 'ADJUST_ADD'; input: AddStockInput }
@@ -50,6 +53,23 @@ function adjustmentPlan(request: AdjustmentRequest): AdjustmentPlan {
         expectedOnHandQuantity: request.input.expectedOnHandQuantity,
         newOnHandQuantity: request.input.newOnHandQuantity,
       };
+    default: {
+      const unknownRequest: never = request;
+      throw new Error(`Unknown adjustment: ${JSON.stringify(unknownRequest)}`);
+    }
+  }
+}
+
+// Runtime validation at the service boundary (L53): strict schema, trimmed reason, branded ids, so the
+// idempotency fingerprint is the same whoever calls and however the input was built.
+function validatedRequest(request: AdjustmentRequest): AdjustmentRequest {
+  switch (request.operation) {
+    case 'ADJUST_ADD':
+      return { operation: 'ADJUST_ADD', input: addStockSchema.parse(request.input) };
+    case 'ADJUST_REMOVE':
+      return { operation: 'ADJUST_REMOVE', input: removeStockSchema.parse(request.input) };
+    case 'ADJUST_SET':
+      return { operation: 'ADJUST_SET', input: setStockSchema.parse(request.input) };
     default: {
       const unknownRequest: never = request;
       throw new Error(`Unknown adjustment: ${JSON.stringify(unknownRequest)}`);
@@ -88,6 +108,7 @@ async function changeStockRow(
       requestedOnHandQuantity: request.input.newOnHandQuantity,
     });
   }
+  assertWithinOnHandLimit(before, quantityDelta);
   const after = await changeOnHand(transaction, key, quantityDelta);
   if (after === null) {
     throw inventoryErrors.stockBelowReserved({
@@ -102,12 +123,14 @@ async function changeStockRow(
 async function adjustStock(
   actor: StaffInventoryActor,
   idempotencyKey: string,
-  request: AdjustmentRequest,
+  submitted: AdjustmentRequest,
 ): Promise<StockRequestResult> {
   assertStaffPermission(actor.staff, 'inventory.write');
   const key = idempotencyKeySchema.parse(idempotencyKey);
-  // A change of zero is refused here, before any transaction, so it leaves no request row.
-  const quantityDelta = adjustmentDelta(adjustmentPlan(request));
+  // A change of zero is refused here, before any transaction and before the input is validated, so it
+  // keeps its documented 422 NO_STOCK_CHANGE and leaves no request row.
+  const quantityDelta = adjustmentDelta(adjustmentPlan(submitted));
+  const request = validatedRequest(submitted);
   const location = { variantId: request.input.variantId, warehouseId: request.input.warehouseId };
   await assertStockLocationsExist(getDatabase(), {
     warehouseId: location.warehouseId,

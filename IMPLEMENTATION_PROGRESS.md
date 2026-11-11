@@ -16,7 +16,9 @@ each entry was written; this list is the current status.
       applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
       inventory services: **complete**; commit `ef16d46` plus documentation follow-up `9c1f691`, both pushed to
       GitHub on 2026-11-11, after the N1 fix and a full regression (332 unit, 351 integration, 56 HTTP, 52
-      browser). Steps 3 (admin API) and 4 (admin pages) not started; step 3 needs the owner's explicit approval.
+      browser). Step 3, the admin inventory API, with its hardening pass and review fixes: done and verified
+      (345 unit, 360 integration, 85 HTTP, 52 browser), **not committed**, awaiting owner review. Step 4 (admin pages) not
+      started.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -2053,3 +2055,272 @@ Development fingerprint `9cec751c29cab1faab002a9308e23887` throughout step 2, in
 snapshot of the development migrations and per-table insert, update and delete counters was identical
 before and after, and the fingerprint query in `docs/SESSION_HANDOFF.md` still matched afterwards. Only `ecommerce_test` was
 written to: in checkpoints 1–5, the N1 tests and the full regression.
+
+## Wave 5 step 3: admin inventory API (2026-11-11 to 2026-11-12, done; awaiting owner review, not committed)
+
+Owner-approved scope: the HTTP layer over the Wave 5 step 2 services, plus the API items the step 2 review
+left for this step (L37, L43, L44, L45). Not done, by instruction: no admin pages (step 4), no reservation
+route, no Redis in stock paths, no schema or migration change, no write to development, no commit or push.
+Decisions: TD-020.
+
+### What was built
+
+| Area                          | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Routes (9 files, 11 handlers) | `src/app/api/admin/warehouses/route.ts` (GET, POST), `warehouses/[warehouseId]/route.ts` (GET, PATCH), `warehouses/[warehouseId]/status/route.ts` (POST), `src/app/api/admin/inventory/route.ts` (GET stock matrix), `inventory/adjustments/route.ts` (POST add, remove, set), `inventory/receipts/route.ts` (POST), `inventory/thresholds/route.ts` (PUT), `inventory/movements/route.ts` (GET ledger), `inventory/low-stock/route.ts` (GET with `totalCount`)     |
+| Shared                        | `src/lib/request-idempotency.ts` (`Idempotency-Key` header: 400 `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_INVALID`); `src/lib/db.ts` `isTransactionTimeout` (the two genuine P2028 timeouts, narrowed in the review fixes); `src/lib/errors.ts` kind `UNAVAILABLE` (503) and `TransactionTimeoutError`; `src/lib/api-handler.ts` maps them to 503 `TRANSACTION_TIMEOUT` with `Retry-After: 1`                                                                   |
+| Inventory module              | `stockAdjustmentSchema` (body discriminated by `operation`); errors `ON_HAND_LIMIT_EXCEEDED` (422) and `INVALID_CURSOR` (400); `assertWithinOnHandLimit` used by add and receipt on the locked row; `receiveStock` re-parses its input; stock-matrix and ledger cursors must exist                                                                                                                                                                                  |
+| Tests                         | final counts after the hardening pass and all review rounds (the sections below say which round added what): unit: `request-idempotency.test.ts` (3), `errors.test.ts` (3), `stock-rules.test.ts` (+2), `inventory.schema.test.ts` (+5); integration: `inventory-api-rules.test.ts` (7), `stock-adjustments.test.ts` (+1), `rate-limit-redis-down.test.ts` (+1); HTTP: `tests/http/inventory.http.test.ts` (25), `tests/http/inventory-rate-limit.http.test.ts` (4) |
+
+Permissions: `inventory.read` for the 5 read routes, `inventory.write` for adjustments, receipts and
+thresholds, `warehouses.write` for warehouse create, edit and status; routes check before reading input
+and the services check again. Responses: create 201; adjustments and receipts 201 when applied and 200
+when replayed (`stockRequest.replayed`); other writes 200. Full table: API_DOCUMENTATION.md, "Admin:
+warehouses and inventory".
+
+### Changes to existing behaviour and tests (reviewed)
+
+- **On-hand ceiling (L44).** Add and receipt now refuse to pass 1,000,000 on hand (422), the limit set
+  already had. One existing test, "rolls back a receipt whose second line fails in the database after the
+  first line changed", relied on PostgreSQL's integer overflow for its second line; the ceiling now refuses
+  that line first (still after the first line was applied), so its expected error changed from the
+  overflow message to `ON_HAND_LIMIT_EXCEEDED` and its title to "…is refused after the first line
+  changed". What it proves, the rollback of the already-applied first line, is unchanged.
+- **Cursors (L37).** An unknown stock-matrix or ledger cursor is now 400 `INVALID_CURSOR` instead of an
+  empty page. No existing test relied on the empty page.
+- **Adjustment input validated in the service (history).** A first version re-parsed it like receipts;
+  the existing test "refuses a zero change (422)" then got 400, so that version was reverted. The
+  hardening pass below re-added the validation with the zero-change check first, which keeps 422
+  `NO_STOCK_CHANGE` (L53 resolved).
+- **Transaction timeout (L43).** Measured on `ecommerce_test`: a stock request kept waiting on a locked
+  stock row for 5.5 seconds fails with Prisma P2028 and leaves stock, movements, request rows and audit rows
+  unchanged; the API answers 503 `TRANSACTION_TIMEOUT` (retryable) instead of 500.
+
+### Tests (Node v26.13.0, guarded `ecommerce_test` and `ecom:test:` only)
+
+| Suite                                  | Before step 3 | First API version (2026-11-11, before the hardening pass and review fixes) |
+| -------------------------------------- | ------------- | -------------------------------------------------------------------------- |
+| `npm test`                             | 332           | **341 / 341**                                                              |
+| `npm run test:integration`             | 351           | **356 / 356**                                                              |
+| `npm run test:http` (production build) | 56            | **78 / 78**                                                                |
+| `npm run test:e2e` (production build)  | 52            | **52 / 52** (no page changed; run to confirm)                              |
+
+Also: `npm run build` (the 9 new routes are in the route list), `npm run format:check`, `npm run lint`,
+`npm run typecheck` and `git diff --check` all exit 0. Order of runs: build, `npm run start:test`, the new
+HTTP file alone (22 / 22), full `test:http`, `test:e2e`, server stopped, `npm test`, full
+`test:integration`. Lint first failed on two arrow-function bodies in a new unit test; fixed, then 0.
+
+Mutation checks (each file restored byte for byte, checked with `cmp`): removing the ceiling check from add
+and receipt made both ceiling tests fail; removing the cursor check made the cursor test fail.
+
+HTTP coverage of the first version (22 tests; the review fixes added 3 more to this file, and the hardening pass added the 3-test rate-limit file): 401 on all 11 handlers; 403 `WRONG_ACCOUNT_TYPE` for a customer session; 403
+on every read for a test-only staff member with `catalogue.read` only (created on `ecommerce_test` with a
+copied demo password hash); support, catalogue manager and order operations can read but get 403 on all 6
+writes, with the ledger, stock and warehouse unchanged; 403 `ORIGIN_NOT_ALLOWED` for another-site and
+missing `Origin` on all 6 writes; 404 on the store host; 400 for malformed JSON, unknown fields, bad UUIDs
+and bad query values; 400 `INVALID_CURSOR`; 400 for a missing or malformed `Idempotency-Key` with nothing
+applied; 404 for unknown warehouses and variants (a receipt with one unknown line applies nothing); 409
+`WAREHOUSE_CODE_TAKEN`, `STALE_STOCK` and `STOCK_BELOW_RESERVED`; 422 `NO_STOCK_CHANGE`,
+`ON_HAND_LIMIT_EXCEEDED` and `IDEMPOTENCY_KEY_REUSED` (other content, other operation, or a receipt under an
+adjustment's key); replay 200 with the same `changeRequestId` and movements; the same key from another
+staff member is a new change; 10 identical concurrent requests → one 201 and nine 200, stock changed once;
+8 concurrent one-unit removals with 5 on hand → five 201 and three 409, ending at 0; 4 concurrent receipts
+and 4 additions on the same rows → all 201, ledger total 24; thresholds, low stock with `totalCount` and
+the inactive-warehouse rule; ledger filters and cursor paging without gaps or repeats; matrix search and
+paging; repeated reads leave the ledger, stock and warehouse unchanged.
+
+### Databases
+
+Development fingerprint `9cec751c29cab1faab002a9308e23887` before and after every run (five migrations,
+write counters 1,629 / 1,023 / 0 unchanged). Only `ecommerce_test` was written to, through the guarded
+harness (`start:test` reset and seed, integration truncates, the HTTP helper `runOnTestDatabase`).
+
+### Remaining limitations
+
+L35, L36, L38–L43, L46–L50, L52, L54 and L55 (`docs/REQUIREMENTS_TRACEABILITY.md`). Added during step 3:
+L52 with the API (2026-11-11; low-stock `totalCount` is a second query), L54 in the review fixes
+(2026-11-12; adjustment fingerprints include the letter case of ids) and L55 in the final review
+remediation (2026-11-12; warehouse audit rows keep the path id's letter case). L51 and L53, recorded with
+the API, were resolved in the hardening pass below.
+
+### Hardening pass (2026-11-11)
+
+- **Write rate limit (L51).** New action `inventory-write` in the Wave 2A limiter (no new mechanism: Redis
+  atomic counter, Postgres fallback, fixed windows, SHA-256 hashed bucket keys). Policy: 60 writes per 60
+  seconds per staff member in development, staging and production; 200 per 20 seconds in
+  `config.test.json`. `src/modules/inventory/inventory-rate-limit.ts` (`limitInventoryWrites`) is called by
+  all six write handlers right after `requirePermission` and before the `Idempotency-Key` and body; the
+  five read handlers are not limited. Files: `src/lib/config/config.schema.ts`, the four
+  `config/config.<env>.json`, the six write route files.
+- **Adjustment input validated in the service (L53).** Callers of `addStock`, `removeStock` and `setStock`
+  in `src/`: only `POST /api/admin/inventory/adjustments`, which parses the strict
+  `stockAdjustmentSchema`; integration tests also call them directly. The service now parses its input with
+  the strict schemas after the zero-change check, so 422 `NO_STOCK_CHANGE` is unchanged (its existing test
+  still passes) and a padded or differently ordered repeat replays instead of answering 422.
+- **Reservation header comment** in `reservation.service.ts` now documents the apply order (by stock row,
+  every RELEASE before any RESERVE, then by shipment) and that it never changes the lock order. No code
+  changed there.
+- **New tests:** HTTP `tests/http/inventory-rate-limit.http.test.ts` (3: 429 with `Retry-After` on all six
+  write routes for one staff member while reads and a colleague are unaffected; 401 for an anonymous and
+  403 for a read-only caller, one request each, which did not yet prove the order (see the third review
+  remediation below); a limited request applies nothing and a retry with the same key after `Retry-After` applies once,
+  then replays); integration (2: service validation and 422 kept; the `inventory-write` limit with Redis
+  really unreachable falls back to Postgres, enforces 200 + 1, isolates a second staff id, and stores only
+  `inventory-write:<64 hex>` bucket keys).
+- **Mutation check:** without the service validation the new L53 test fails (restored byte for byte).
+- **Results:** `npm test` 341 / 341; `npm run test:integration` 358 / 358; `npm run build` exit 0;
+  `npm run test:http` 81 / 81; `npm run test:e2e` 52 / 52; format, lint, typecheck and `git diff --check`
+  exit 0. Development fingerprint `9cec751c29cab1faab002a9308e23887` before and after.
+
+### Review fixes (2026-11-12)
+
+The independent read-only review of step 3 returned NOT READY FOR COMMIT with findings F1–F5 and two
+suspicions, S1 and S2. All were addressed; nothing from step 4 was started.
+
+| Finding                                                                                                                              | Status                   | Change                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1 (medium): an upper-case variant id in a receipt gave 500, and the same variant twice in different case passed "each variant once" | fixed                    | `inventory.schema.ts`: `lowerCaseVariantIdSchema` and `lowerCaseWarehouseIdSchema` (lower-case, then the shared branded schema) for receipt lines and warehouse; `receiveStock` already re-parses                                                                                                                                     |
+| F2 (low): an upper-case id on `PUT /thresholds` gave 404                                                                             | fixed                    | the same schemas for `setLowStockThresholdSchema`; `setLowStockThreshold` now parses its input too                                                                                                                                                                                                                                    |
+| F3 (low): every Prisma P2028 was treated as a retryable timeout                                                                      | fixed                    | `src/lib/db.ts` `isTransactionTimeout` matches only "cannot be executed on an expired transaction" and "Unable to start a transaction in the given time" (Prisma 7.10.1 messages, read from `runtime/client.js`); `api-handler.ts` logs a genuine timeout at warn with the original message; any other P2028 is a 500 logged at error |
+| F4 (low): docs contradicted the code                                                                                                 | fixed                    | stale adjustment bullet, L51 in the remaining list, warehouse-create retry semantics (409 safe duplicate, not a replay), 503 wording, letter-case behaviour (receipts and thresholds normalised; adjustments case-sensitive, L54)                                                                                                     |
+| F5 (low): weak tests                                                                                                                 | fixed                    | exact `ZodError` instead of bare `rejects.toThrow()` (two places); a genuine PostgreSQL failure on a receipt's second line after the first was applied (test-only trigger, dropped in `finally`); HTTP 503 end to end; exact SHA-256 bucket keys instead of an assertion that could not fail                                          |
+| S1: rate-limit HTTP tests on `next dev`                                                                                              | not reproduced; hardened | routes warmed first (401, outside the budget); bursts start in a fresh window and assert they stayed in it. On a cold `next dev` the first hits took 130–570 ms (about 1.8 s in all) and happened during warm-up; the rate-limit file passed 3 / 3 and `npm run test:http:dev` 84 / 84                                                |
+| S2: pool contention turning into 503                                                                                                 | not reproduced; reduced  | bursts cut from 25 to 10 (pool 20). Three full `npm run test:http` runs in a row on one server: 84 / 84 each; the server log shows only the deliberate expired-transaction timeouts (one per run), no "Unable to start a transaction" and no unhandled error                                                                          |
+
+New tests: unit +4 (precise P2028 cases; lower-casing and case-variant duplicates; adjustment ids keep
+their case); integration +2 (upper-case ids by a direct caller; the real database failure mid-receipt);
+HTTP +3 (upper-case receipt and threshold with a lower-case replay; a case-variant duplicate receipt
+refused with nothing written and its key still free; 503 `TRANSACTION_TIMEOUT` with a real held row lock,
+then the same key applied once and replayed). The timeout integration test now also checks the
+expired-transaction message.
+
+Mutation checks (files restored byte for byte; both mutations were applied in the same run): without the
+lower-casing, 2 unit tests ("lower-cases receipt and threshold ids" and "refuses a receipt naming the same
+variant twice in different letter case") and the upper-case integration test fail; with every P2028
+counted as a timeout, 1 unit test ("does not treat other P2028 errors, other codes or plain errors as
+timeouts") fails. That run showed 3 failed unit tests in all: 2 from the first mutation, 1 from the
+second. The HTTP tests were not part of the mutation runs.
+
+Results: `npm test` 345 / 345; `npm run test:integration` 360 / 360; `npm run build` exit 0;
+`npm run test:http` 84 / 84 (three times); `npm run test:e2e` 52 / 52; `npm run test:http:dev` 84 / 84 on
+`npm run start:test:dev`; format, lint, typecheck and `git diff --check` exit 0. The test-only trigger and
+function are absent from `ecommerce_test` afterwards. Development fingerprint
+`9cec751c29cab1faab002a9308e23887` before and after.
+
+### Final review remediation (2026-11-12)
+
+The second independent read-only review found F1–F5 fixed and every invariant intact, and listed low
+findings N1–N4 (verdict NOT READY FOR COMMIT). Addressed as follows; no production behaviour changed.
+
+- **N2 (fixed): window guard before the 429 assertions.** In `tests/http/inventory-rate-limit.http.test.ts`
+  `expectSameWindow(window)` now runs right after each response arrives and before its status check (all
+  six write routes in the first test, the over-budget write in the second, the refused adjustment in the
+  third), so a window crossing fails with "the requests crossed a rate-limit window boundary". Every 429
+  assertion is kept.
+- **N3 (fixed): failure-safe test-only cleanup.**
+  - `holdRowLocksOnTestDatabase` (`tests/http/support/test-database-writer.ts`): if `BEGIN`, the lock
+    query or the pid query fails, it rolls back, closes the connection and rethrows the original error.
+    Checked with a scratch script passing invalid SQL: the original error ("relation … does not exist")
+    came back, the script exited by itself and no session remained on `ecommerce_test`.
+  - The database-failure receipt test (`tests/integration/stock-adjustments.test.ts`): asserts the
+    connected database is a `_test` one before any DDL, drops leftovers first, creates the function and
+    trigger inside the protected block, drops whatever exists in `finally` (a cleanup error is raised only
+    if the test itself passed, so it never hides the original failure) and then asserts no test-only
+    trigger or function remains. Checked by temporarily pointing the trigger at a missing function: the
+    test failed with PostgreSQL's original error, 0 test triggers and 0 test functions remained, and the
+    file was restored byte for byte.
+- **N4 (fixed): documentation evidence.** Final test counts per file (checked against the files:
+  `errors.test.ts` 3, `inventory-api-rules.test.ts` 7, `inventory.http.test.ts` 25,
+  `inventory-rate-limit.http.test.ts` 3, plus +2, +5, +1 and +1 in existing files), the first-version
+  counts labelled as such, the lower-casing mutation count corrected to 2 unit tests plus 1 integration
+  test (the third unit failure in that run came from the simultaneous timeout mutation), L52 attributed
+  to the API work in both the journal and the handoff, and the handoff dated 2026-11-12.
+- **N1 (documented, not changed): L55.** `warehouse.service.ts:141` and `:168` write the audit
+  `entity_id` from the path id exactly as sent, so an upper-case id is stored upper case and a lookup by
+  the lower-case id does not find it; the catalogue services do the same. Recorded in the traceability
+  limitations, TD-020 and the API documentation, for the audit viewer (Wave 10) or a later id step.
+
+Results (Node v26.13.0): `npm test` 345 / 345; `npm run test:integration` 360 / 360; `npm run build` exit
+0; the two inventory HTTP files 28 / 28; `npm run test:http` 84 / 84; `npm run test:e2e` 52 / 52; format,
+lint, typecheck and `git diff --check` exit 0. The server log showed only the two deliberate
+expired-transaction timeouts (one from the focused run, one from the full run), no "Unable to start a
+transaction" and no unhandled error. No test-only trigger or function remains in `ecommerce_test`.
+Development fingerprint `9cec751c29cab1faab002a9308e23887` before and after; no new tests were added in
+this round, so the counts are unchanged.
+
+### Third review remediation (2026-11-12)
+
+The third independent read-only review confirmed the production code and every invariant and found one low
+test-coverage gap (R1) and three documentation corrections (R2–R4). No production code changed.
+
+- **R1 (fixed): permission before the rate limit, proven.** New HTTP test in
+  `tests/http/inventory-rate-limit.http.test.ts`, "refuses a read-only staff member with 403 every time, past
+  the whole budget, without using any of it": a staff member whose role has only `inventory.read` sends
+  `maxRequests + 1` (201) writes in one window, in bursts of 10, and every one must be 403
+  `PERMISSION_DENIED` and not 429; then `inventory.write` is added to that role (permissions are read per
+  request), and the next write by the same session in the same window gets 400 `IDEMPOTENCY_KEY_REQUIRED`.
+  That proved the reversed order fails, but not that the refused requests used none of the budget: one
+  allowed write only shows at most 199 of them were counted (corrected in the fourth review remediation
+  below, which also renamed the test). The window is checked after each burst and before the final
+  status. The earlier anonymous and read-only test is kept unchanged. Helpers `newStaff`,
+  `grantPermission` and `roleCode` replace the fixed permission list inside `newInventoryStaff`, which keeps
+  its permissions. Mutation check: with `requireStaff`, then `limitInventoryWrites`, then
+  `assertStaffPermission` in `src/app/api/admin/inventory/adjustments/route.ts` (production build rebuilt
+  and served), the new test failed with "expected 429 not to be 429"; the route was restored byte for byte
+  and rebuilt before the runs below.
+- **R2 (fixed):** `docs/REQUIREMENTS_TRACEABILITY.md` last update 2026-11-12.
+- **R3 (fixed):** TD-020 now states the handler order: origin check, session and permission
+  (`requirePermission`), inventory write rate limit (write routes only), `Idempotency-Key` (adjustments and
+  receipts), input validation, then the service, which checks the permission again. TD-020's rate-limit
+  bullet names the test that proves the order.
+- **R4 (fixed):** TD-019's risk list names only the open limitations from that step: L35, L36, L38–L43 and
+  L46–L50 (L37, L44 and L45 resolved in step 3; the API's own L52, L54 and L55 are under TD-020), checked
+  against the traceability table.
+
+Results (Node v26.13.0): `npm test` 345 / 345; `npm run test:integration` 360 / 360; `npm run build` exit 0
+(rebuilt after the mutation check); the rate-limit HTTP file 4 / 4; `npm run test:http` 85 / 85;
+`npm run test:e2e` 52 / 52; `npm run test:http:dev` 85 / 85 on `npm run start:test:dev`; format, lint,
+typecheck and `git diff --check` exit 0. The server log showed one deliberate expired-transaction timeout,
+no "Unable to start a transaction" and no unhandled error. Development fingerprint
+`9cec751c29cab1faab002a9308e23887` before and after.
+
+### Fourth review remediation (2026-11-12)
+
+The fourth independent read-only review confirmed the code, R1–R4 and every invariant, and found that the
+R1 evidence was overstated (Q1): one allowed write after the grant shows only that at most 199 of the 201
+refused writes were counted, not that none were. It also noted a handoff heading (Q3), two testing-strategy
+lines (Q4), a test fixture's wording (Q5) and that only the adjustments route was tested (Q2). No production
+code changed.
+
+- **Q1 and Q2 (fixed): the whole budget remains, on two routes.** The test in
+  `tests/http/inventory-rate-limit.http.test.ts` is now "checks permission before the budget on adjustments
+  and warehouse writes: 201 refused writes leave the whole budget of 200". A staff member with only
+  `inventory.read` sends `maxRequests + 1` (201) writes alternating between `POST
+/api/admin/inventory/adjustments` and `PATCH /api/admin/warehouses/{id}`: every one 403
+  `PERMISSION_DENIED`, never 429. After `inventory.write` is granted to the same role, the same session
+  sends exactly `maxRequests` (200) adjustments: every one 400 `IDEMPOTENCY_KEY_REQUIRED`; the next is 429
+  `RATE_LIMITED` with `Retry-After` between 1 and 20 seconds equal to `details.retryAfterSeconds`. The
+  window is checked after every burst and before every status assertion, all in one window. Since the
+  limiter allows a count of at most 200, 200 allowed writes followed by a 429 prove the refused writes were
+  never counted. The earlier anonymous and read-only test is unchanged; no timeout or configuration
+  changed (the file took about 22 seconds).
+- **Mutation checks (production build rebuilt and served for each, routes restored byte for byte and
+  rebuilt afterwards):** with `requireStaff`, then `limitInventoryWrites`, then `assertStaffPermission` in
+  the adjustments route, the test failed with "expected 429 to be 400" (the 101 refused adjustments had
+  used budget); the same reversal in `src/app/api/admin/warehouses/[warehouseId]/route.ts` (PATCH) failed
+  the same way. The other four write routes follow the same code order, verified by reading.
+- **Q3 (fixed):** the handoff heading now says it was updated after the fourth review remediation.
+- **Q4 (fixed):** `docs/TESTING_STRATEGY.md` lists the route-order mutation, and the timed-window bullet
+  says the window is checked before the status assertion it guards (an expected 429, 403 or 400).
+- **Q5 (fixed):** `src/lib/errors.test.ts` uses the real Prisma 7.10.1 template for the nested-transaction
+  P2028 message ("Nested transactions are not supported by adapter … : createSavepoint is not
+  implemented."), and its comment says placeholders hold example values.
+- The R1 entry above, TD-020 and the handoff now say what the evidence proves.
+
+Results (Node v26.13.0): `npm run build` exit 0 (on the restored code); the rate-limit HTTP file 4 / 4;
+`npm run test:http` 85 / 85; `npm run test:e2e` 52 / 52; `npm run test:http:dev` 85 / 85 on
+`npm run start:test:dev`; `npm test` 345 / 345; `npm run test:integration` 360 / 360; format, lint,
+typecheck and `git diff --check` exit 0. The server log showed one deliberate expired-transaction timeout,
+no "Unable to start a transaction" and no unhandled error. Development fingerprint
+`9cec751c29cab1faab002a9308e23887` before and after. Test counts are unchanged (the test was rewritten, not
+added).

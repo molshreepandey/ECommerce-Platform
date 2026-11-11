@@ -1,10 +1,50 @@
 # Session handoff
 
-Updated 2026-11-11 after Wave 5 step 2 was pushed (`ef16d46` and `9c1f691`). Resume from exactly this state. Do **not**
-recreate the project, reset any database, commit, push, or start Wave 5 step 3 (admin API) or any later
-work without the owner's explicit approval.
+Updated 2026-11-12 after the Wave 5 step 3 fourth review remediation, the last of the review rounds listed below (admin inventory API: done and verified, **not committed**).
+Resume from exactly this state. Do **not** recreate the project, reset any database, commit, push, or start
+Wave 5 step 4 (admin pages) or any later work without the owner's explicit approval.
 
-## Latest: Wave 5 step 2, inventory services (2026-11-11, complete; commits `ef16d46` and `9c1f691`, pushed)
+## Latest: Wave 5 step 3, admin inventory API (2026-11-11 to 2026-11-12, done, NOT committed)
+
+- 9 route files, 11 handlers: `/api/admin/warehouses` (GET, POST), `/api/admin/warehouses/{id}` (GET,
+  PATCH), `/api/admin/warehouses/{id}/status` (POST), `/api/admin/inventory` (GET stock matrix),
+  `/api/admin/inventory/adjustments` (POST add, remove, set), `/api/admin/inventory/receipts` (POST),
+  `/api/admin/inventory/thresholds` (PUT), `/api/admin/inventory/movements` (GET ledger),
+  `/api/admin/inventory/low-stock` (GET with `totalCount`). API_DOCUMENTATION.md, "Admin: warehouses and
+  inventory"; decisions TD-020; journal "Wave 5 step 3".
+- Permissions `inventory.read`, `inventory.write`, `warehouses.write`, checked in the route and again in
+  the service. Adjustments and receipts need an `Idempotency-Key` header (201 applied, 200 replayed, 422
+  reused with other content). No reservation route; no Redis in stock paths; lock hierarchy unchanged.
+- Resolved here: L37 (unknown cursor → 400 `INVALID_CURSOR`), L44 (add and receipt capped at 1,000,000 on
+  hand → 422 `ON_HAND_LIMIT_EXCEEDED`), L45 (`receiveStock` re-normalises its input); L43 now answers 503
+  `TRANSACTION_TIMEOUT` (retryable). New with the API: L52 (low-stock `totalCount` is a second query). One
+  existing test changed its expected error (the receipt rollback test now meets the ceiling before the
+  integer overflow; journal explains).
+- Hardening pass: per-staff write rate limit `inventory-write` on all six write routes (60 per 60 s; test
+  config 200 per 20 s; L51 resolved), adjustment input validated inside the service with 422
+  `NO_STOCK_CHANGE` kept (L53 resolved), reservation header comment corrected.
+- Review fixes (2026-11-12, after an independent review): receipt and threshold ids lower-cased (an
+  upper-case id gave 500 or 404), only genuine transaction timeouts mapped to 503, docs corrected, tests
+  made exact (real PostgreSQL failure mid-receipt, HTTP 503 end to end), rate-limit tests warmed and
+  window-guarded. New limitation: L54 (adjustment fingerprints include id letter case).
+- Final review remediation (2026-11-12, after a second independent review): the rate-limit window guard
+  now runs before each 429 assertion, the test-only lock holder and trigger clean up even after partial
+  failures, documentation evidence corrected (test counts, the lower-casing mutation count, L52
+  attribution, dates). New limitation: L55 (warehouse audit rows keep the path id's letter case).
+- Third review remediation (2026-11-12): a read-only staff member gets 403 past the whole write budget
+  (proves permission before the rate limit; fails if the order is reversed), TD-019 and TD-020 wording and
+  the traceability date corrected.
+- Fourth review remediation (2026-11-12): that test now also proves the whole budget remains (after the
+  grant, exactly 200 writes pass and the next is 429) and covers a warehouse write route too (both route
+  orders mutation-checked); handoff heading, testing strategy and a test fixture's wording corrected.
+- Tests: 345 unit, 360 integration, 85 HTTP, 52 browser; build, format, lint, typecheck and
+  `git diff --check` pass. No schema or migration change. Development untouched: fingerprint still
+  `9cec751c29cab1faab002a9308e23887`.
+- Git: HEAD and `origin/main` are `0c1e6f2`; the step 3 code, tests and docs are uncommitted.
+- Next: owner review; with approval, commit step 3 (then push on separate approval) and plan step 4
+  (admin pages: warehouses, stock matrix, adjust dialog, ledger).
+
+## Wave 5 step 2, inventory services (2026-11-11, complete; commits `ef16d46`, `9c1f691` and `0c1e6f2`, pushed)
 
 - `src/modules/inventory/`: warehouses; idempotent staff stock changes (add, remove, set as ADJUSTMENT;
   supplier receipts as RECEIPT); low-stock thresholds; internal `reserveStock`, `releaseReservation` and
@@ -12,8 +52,8 @@ work without the owner's explicit approval.
   queries. The catalogue "in stock" filter now uses the inventory definition (active warehouses only, D30).
 - Rules, the global lock hierarchy (L0a orders → L0b shipments → L1 requests → L2 products → L3 variants →
   L4 warehouses → L5 stock rows → inserts) and the **reservation caller contract**: TD-019. Journal:
-  "Wave 5 step 2". Limitations L35–L50 (mandatory: L40 dispatch races in Wave 9, L38 tracker check before
-  Wave 8, L41 volume checks in Wave 14).
+  "Wave 5 step 2". Limitations L35–L50, of which L37, L44 and L45 were resolved in step 3 (mandatory:
+  L40 dispatch races in Wave 9, L38 tracker check before Wave 8, L41 volume checks in Wave 14).
 - Final review finding N1 fixed: in one `applyReservationChanges` call, every RELEASE on a stock row is
   applied before any RESERVE on it (then by shipment id), so a re-allocation can reserve the units it
   frees; the lock hierarchy is unchanged. Two regression tests cover both shipment-id orders.
@@ -24,9 +64,8 @@ work without the owner's explicit approval.
   documentation follow-up `9c1f691963253c1292d9be125858b5651dc99cb5` (5 files), both pushed to GitHub on
   2026-11-11 (fast-forward `f6c018b..9c1f691`). After the push local `main` and `origin/main` were in sync
   and the working tree was clean.
-- Next: Wave 5 step 3 (admin inventory API) has **not started** and needs the owner's explicit approval;
-  its plan covers the `Idempotency-Key` header, schemas at the boundary, a retryable transaction-timeout
-  error, aligned quantity limits and cursor validation.
+- A further documentation-only commit `0c1e6f2` recorded the push and was pushed as well
+  (`9c1f691..0c1e6f2`). Step 3 followed (above).
 
 ## Wave 5 step 1, inventory ledger migration foundation (2026-11-10, commit `f6c018b`, pushed)
 
@@ -103,18 +142,19 @@ work without the owner's explicit approval.
 - **Waves 1–4 are finished, committed and pushed.** Wave 2B includes final check 7 (client IP behind
   proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
 - **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
-  development; step 2 (inventory services) is complete, committed and pushed (`ef16d46`, `9c1f691`); steps 3
-  (admin API) and 4 (admin pages) are not started and need the owner's explicit approval.
+  development; step 2 (inventory services) is complete, committed and pushed (`ef16d46`, `9c1f691`,
+  `0c1e6f2`); step 3 (admin API) is done and verified but not committed; step 4 (admin pages) is not
+  started and needs the owner's explicit approval.
 
-## Git state (2026-11-11, after the Wave 5 step 2 push)
+## Git state (2026-11-12, Wave 5 step 3, uncommitted)
 
-| Item                      | Value                                                                                                                                                                               |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                                                                                                                              |
-| HEAD                      | `9c1f691` (Wave 5 step 2 documentation follow-up), parent `ef16d46` (Wave 5 step 2), whose parent is `f6c018b` (Wave 5 step 1)                                                      |
-| Relative to `origin/main` | in sync: `origin/main` is `9c1f691`, pushed on 2026-11-11 as a fast-forward `f6c018b..9c1f691`                                                                                      |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691` (5 step 2) |
-| Working tree              | clean after the push                                                                                                                                                                |
+| Item                      | Value                                                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `main`                                                                                                                                                                                         |
+| HEAD                      | `0c1e6f2` (Wave 5 step 2 push record, documentation only), parent `9c1f691`, then `ef16d46` (Wave 5 step 2)                                                                                    |
+| Relative to `origin/main` | in sync: `origin/main` is `0c1e6f2` (pushed 2026-11-11 as fast-forwards `f6c018b..9c1f691`, then `9c1f691..0c1e6f2`)                                                                           |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691`, `0c1e6f2` (5 step 2) |
+| Working tree              | Wave 5 step 3 code, tests and docs modified or new; not staged, not committed                                                                                                                  |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -177,7 +217,7 @@ New files in the commit (106), by folder:
 Check 7 added `tests/http/client-ip.http.test.ts`, `tests/integration/client-ip-trust.test.ts` and the
 `docs/DEPLOYMENT_GUIDE.md` change; `src/lib/client-ip.ts` and its test were already new in Wave 2B.
 
-## Latest passing tests (Wave 5 step 2 full regression, 2026-11-11, Node v26.13.0)
+## Latest passing tests (Wave 5 step 3, 2026-11-12, Node v26.13.0)
 
 Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell here starts on v20).
 
@@ -185,14 +225,15 @@ Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell he
 | ---------------------------------------------------- | -------------------------- |
 | `npm run format:check`, `lint`, `typecheck`, `build` | all exit 0                 |
 | `git diff --check`                                   | clean                      |
-| `npm test`                                           | 332 / 332                  |
-| `npm run test:integration`                           | 351 / 351                  |
-| `npm run test:http` (production build)               | 56 / 56                    |
+| `npm test`                                           | 345 / 345                  |
+| `npm run test:integration`                           | 360 / 360                  |
+| `npm run test:http` (production build)               | 85 / 85                    |
 | `npm run test:e2e` (production build)                | 52 / 52 (desktop + 360 px) |
 
-The dev-server variants (`npm run test:http:dev`, `npm run test:e2e` on `next dev`) were not part of this
-regression; they last ran in the 2026-11-10 regression (40 / 40 each). After the regression only
-documentation changed (journal, handoff, testing strategy, traceability, TD-019).
+`npm run test:http:dev` on `npm run start:test:dev` also passed (85 / 85, 2026-11-12); `npm run test:e2e`
+on `next dev` last ran in the 2026-11-10 regression (40 / 40). After these runs only
+documentation changed (journal, handoff, API documentation, testing strategy, traceability, architecture,
+TD-019 and TD-020).
 
 ## Databases and services
 
@@ -235,24 +276,24 @@ not a database result.
 | 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)                           |
 | 2   | Wave 5 step 2 inventory services                 | complete; N1 fixed; committed and pushed (`ef16d46`, `9c1f691`)  |
 | 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser) |
-| 4   | Wave 5 steps 3–4 (admin API and pages)           | not started; needs the owner's explicit approval                 |
-| 5   | Push to GitHub                                   | done 2026-11-11: `origin/main` is `9c1f691`                      |
+| 4   | Wave 5 step 3 (admin inventory API)              | done and verified; awaiting owner review; not committed          |
+| 5   | Push to GitHub                                   | `origin/main` is `0c1e6f2`; step 3 not committed or pushed       |
+| 6   | Wave 5 step 4 (admin pages)                      | not started; needs the owner's explicit approval                 |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
 snapshot, L31 category and group snapshot decision (before order implementation), L47 reservation caller
 contract (TD-019). Mandatory in Wave 9: L40 real dispatch and cancellation race tests. Before Wave 8: L38
-lock-tracker check. Outstanding limitations: L1–L50 in `docs/REQUIREMENTS_TRACEABILITY.md`.
+lock-tracker check. Outstanding limitations: L1–L55 in `docs/REQUIREMENTS_TRACEABILITY.md` (L37, L44, L45, L51 and L53 resolved in Wave 5 step 3).
 Deployment requirement (not a finished production setting): staging and production keep
 `trustedProxyHopCount` at 0 until the real proxy topology is verified (TD-015, DEPLOYMENT_GUIDE).
 
 ## Exact next steps
 
-1. Check that nothing changed: `origin/main` contains `9c1f691` (Wave 5 step 2 documentation follow-up)
-   and `git status -sb` shows the working tree clean; any commit after `9c1f691` should be documentation
-   only; the development fingerprint is `9cec751c…`; both databases record five migrations; three
-   healthy containers.
-2. Wait for the owner's approval before committing, pushing, or starting Wave 5 step 3. Do not seed development, or reset or truncate any
+1. Check that nothing changed: HEAD and `origin/main` are `0c1e6f2`; the Wave 5 step 3 files are
+   uncommitted in the working tree (29 modified, 16 new); the development fingerprint is `9cec751c…`;
+   both databases record five migrations; three healthy containers.
+2. Wait for the owner's approval before committing step 3, pushing, or starting Wave 5 step 4. Do not seed development, or reset or truncate any
    database without explicit approval.
 
 ## Rules still in force

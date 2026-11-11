@@ -4,7 +4,12 @@ export const appEnvironments = ['development', 'test', 'staging', 'production'] 
 export const appEnvironmentSchema = z.enum(appEnvironments);
 export type AppEnvironment = z.infer<typeof appEnvironmentSchema>;
 
-export const rateLimitActions = ['customer-login', 'customer-register', 'staff-login'] as const;
+export const rateLimitActions = [
+  'customer-login',
+  'customer-register',
+  'staff-login',
+  'inventory-write',
+] as const;
 export const rateLimitActionSchema = z.enum(rateLimitActions);
 export type RateLimitAction = z.infer<typeof rateLimitActionSchema>;
 
@@ -69,6 +74,7 @@ export const appConfigSchema = z
       'customer-login': rateLimitPolicySchema,
       'customer-register': rateLimitPolicySchema,
       'staff-login': rateLimitPolicySchema,
+      'inventory-write': rateLimitPolicySchema,
     }),
     security: z.strictObject({
       strictTransportSecurityMaxAgeSeconds: z.int().min(0),

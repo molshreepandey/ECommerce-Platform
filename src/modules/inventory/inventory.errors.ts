@@ -25,6 +25,21 @@ export const inventoryErrors = {
     ),
   noStockChange: () =>
     inventoryError('UNPROCESSABLE', 'NO_STOCK_CHANGE', 'This would not change the stock.'),
+  onHandLimitExceeded: (details: {
+    variantId: string;
+    warehouseId: string;
+    onHandQuantity: number;
+    requestedOnHandQuantity: number;
+    maximumOnHandQuantity: number;
+  }) =>
+    inventoryError(
+      'UNPROCESSABLE',
+      'ON_HAND_LIMIT_EXCEEDED',
+      'This would take the stock on hand above the largest quantity allowed.',
+      details,
+    ),
+  invalidCursor: () =>
+    inventoryError('VALIDATION', 'INVALID_CURSOR', 'Use the cursor from the previous page.'),
   outOfStock: (details: {
     variantId: string;
     warehouseId: string;

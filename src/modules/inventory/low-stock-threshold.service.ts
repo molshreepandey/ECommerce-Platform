@@ -4,7 +4,7 @@ import { assertStaffPermission } from '@/modules/identity/access-control';
 import type { StaffInventoryActor } from './inventory-actor';
 import { recordInventoryEvents } from './inventory-audit';
 import { inventoryErrors } from './inventory.errors';
-import type { SetLowStockThresholdInput } from './inventory.schema';
+import { type SetLowStockThresholdInput, setLowStockThresholdSchema } from './inventory.schema';
 import {
   lockProductsForShare,
   lockVariantsForShare,
@@ -32,9 +32,12 @@ export interface ThresholdChangeResult {
 // stock row (L5).
 export async function setLowStockThreshold(
   actor: StaffInventoryActor,
-  input: SetLowStockThresholdInput,
+  change: SetLowStockThresholdInput,
 ): Promise<ThresholdChangeResult> {
   assertStaffPermission(actor.staff, 'inventory.write');
+  // Normalised here as well as at the boundary (lower-case ids), so the lookups below always match the
+  // ids PostgreSQL returns, whoever calls.
+  const input = setLowStockThresholdSchema.parse(change);
   await assertStockLocationsExist(getDatabase(), {
     warehouseId: input.warehouseId,
     variantIds: [input.variantId],

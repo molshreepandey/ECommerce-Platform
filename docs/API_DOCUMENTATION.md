@@ -21,12 +21,19 @@ Swagger UI from the Zod schemas in Wave 15.
   | 422  | valid input that breaks a business rule | e.g. unserviceable pincode                                         |
   | 429  | rate limit reached                      | `RATE_LIMITED` (header `Retry-After`, details `retryAfterSeconds`) |
   | 500  | unexpected                              | `INTERNAL_ERROR` (details are never leaked)                        |
+  | 503  | database transaction timed out          | `TRANSACTION_TIMEOUT` (nothing committed; header `Retry-After: 1`) |
 
 - **Same-origin rule:** `POST`, `PUT`, `PATCH` and `DELETE` must send an `Origin` header equal to the site's
   public origin (for example `http://store.localhost:3000`); otherwise 403 `ORIGIN_NOT_ALLOWED`.
 - **Sessions:** sign-in sets an `HttpOnly`, `SameSite=Lax` cookie: `store_session` on the store host,
   `admin_session` on the admin host (`__Host-` prefixed and `Secure` in staging and production). Browsers
   send it automatically; API clients send it as a `Cookie` header. See TD-011.
+- **Idempotency:** requests that must not apply twice (stock adjustments and receipts; checkout in Wave 8)
+  need an `Idempotency-Key` header (16–100 of `A-Z a-z 0-9 _ -`; send a new UUID per user action and the
+  same key on every retry). Missing: 400 `IDEMPOTENCY_KEY_REQUIRED`; malformed: 400
+  `IDEMPOTENCY_KEY_INVALID`. The same key with the same content returns the original result (200,
+  `replayed: true`) and applies nothing; the same key with different content returns 422
+  `IDEMPOTENCY_KEY_REUSED`. Keys belong to the signed-in staff member. See TD-018 and TD-020.
 - **Tracing:** every response carries `x-request-id`; the same id appears in every server log line for
   that request. Clients may send their own `x-request-id` (8–64 letters, digits or dashes).
 
@@ -200,3 +207,45 @@ paths; deactivation cascades to the subtree; only an empty leaf can be deleted. 
 A group holds at most 50 products and a product belongs to at most one group. Every change writes its audit
 rows and search-outbox rows in the same transaction; tagging and membership changes also increase each
 changed product's `version`.
+
+## Admin: warehouses and inventory (`/api/admin/*`, admin host, Wave 5)
+
+Same conventions as the catalogue routes: a staff session (401 otherwise), strict bodies (400 for unknown
+fields), UUID path ids and query ids (400), and the permission checked before the input (403
+`PERMISSION_DENIED`). Reads need `inventory.read`; stock changes and thresholds need `inventory.write`;
+warehouse create, edit and status need `warehouses.write`. The services check the same permission again,
+so a route cannot bypass it. Every write route also has a per-staff budget shared by all six of them
+(`inventory-write`: 60 writes per 60 seconds; 429 `RATE_LIMITED` with `Retry-After`, nothing applied,
+retry with the same `Idempotency-Key`); it is counted after the session and permission checks, and reads
+are not limited. Ids may be sent in any letter case. Receipts and thresholds lower-case them, so a receipt
+naming one variant twice in different case is 400; for adjustments the letter case is part of the
+idempotency fingerprint, so a retry must repeat the ids exactly (otherwise 422 `IDEMPOTENCY_KEY_REUSED`).
+Audit rows for warehouse edits and status changes record the path id as sent, so an upper-case id is stored
+upper case (L55). 503 `TRANSACTION_TIMEOUT` is returned only when the database transaction timed out or could not start in
+time; nothing was committed and the same request can be retried. Reservations have no HTTP route: they are internal to checkout and orders (TD-019).
+
+| Method and path                          | Body or query                                                                                                                                                                                                                         | Success                                                                        | Main errors                                                                                                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/admin/warehouses`              | —                                                                                                                                                                                                                                     | `{ warehouses }` (by priority, then code)                                      |                                                                                                                                                                      |
+| `POST /api/admin/warehouses`             | `{ code, name, addressLine1, addressLine2?, city, state, pincode, contactName, contactPhone, priority }`                                                                                                                              | 201 `{ warehouse }` (active; code upper-cased)                                 | 409 `WAREHOUSE_CODE_TAKEN`                                                                                                                                           |
+| `GET /api/admin/warehouses/{id}`         | —                                                                                                                                                                                                                                     | `{ warehouse }`                                                                | 404 `WAREHOUSE_NOT_FOUND`                                                                                                                                            |
+| `PATCH /api/admin/warehouses/{id}`       | any of the create fields except `code` (at least one)                                                                                                                                                                                 | `{ warehouse }` (only submitted fields change; last save wins)                 | 404                                                                                                                                                                  |
+| `POST /api/admin/warehouses/{id}/status` | `{ isActive }`                                                                                                                                                                                                                        | `{ warehouse }` (same status: no change)                                       | 404                                                                                                                                                                  |
+| `GET /api/admin/inventory`               | query `search?` (product name or SKU), `warehouseId?`, `lowStockOnly?` (`true`/`false`), `limit` (1–100, default 50), `cursor?`                                                                                                       | stock matrix `{ items: [product → variants → levels], nextCursor }`            | 400 for bad parameters, 400 `INVALID_CURSOR`                                                                                                                         |
+| `POST /api/admin/inventory/adjustments`  | header `Idempotency-Key`; `{ operation: "ADD" \| "REMOVE", variantId, warehouseId, quantity (1–100,000), reason }` or `{ operation: "SET", variantId, warehouseId, expectedOnHandQuantity, newOnHandQuantity (0–1,000,000), reason }` | 201 `{ stockRequest }`; 200 when replayed                                      | 404 `VARIANT_NOT_FOUND`, `WAREHOUSE_NOT_FOUND`; 409 `STALE_STOCK`, `STOCK_BELOW_RESERVED`; 422 `NO_STOCK_CHANGE`, `ON_HAND_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED` |
+| `POST /api/admin/inventory/receipts`     | header `Idempotency-Key`; `{ warehouseId, supplierReference, lines: [{ variantId, quantity }] }` (1–100 lines, each variant once)                                                                                                     | 201 `{ stockRequest }`; 200 when replayed                                      | 404; 422 `ON_HAND_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED` (the whole receipt or nothing)                                                                           |
+| `PUT /api/admin/inventory/thresholds`    | `{ variantId, warehouseId, lowStockThreshold (0–100,000) }`                                                                                                                                                                           | `{ changed, stockLevel }` (same value: `changed: false`)                       | 404; 422 `THRESHOLD_NOT_ALLOWED` (archived product or variant: only 0)                                                                                               |
+| `GET /api/admin/inventory/movements`     | query `warehouseId?`, `variantId?`, `movementType?`, `createdFrom?`, `createdTo?` (ISO 8601 with offset), `limit`, `cursor?`                                                                                                          | ledger `{ movements, nextCursor }`, newest first, with before and after values | 400 for bad parameters, 400 `INVALID_CURSOR`                                                                                                                         |
+| `GET /api/admin/inventory/low-stock`     | query `warehouseId?`, `includeInactiveWarehouses?` (`true`/`false`), `limit`, `cursor?` (`warehouseId/variantId`)                                                                                                                     | `{ items, nextCursor, totalCount }`                                            | 400 for bad parameters                                                                                                                                               |
+
+`stockRequest` is `{ changeRequestId, operation (ADJUST_ADD, ADJUST_REMOVE, ADJUST_SET, RECEIPT), replayed,
+movements }`; each movement has `quantityDelta`, `onHandBefore`/`onHandAfter`,
+`reservedBefore`/`reservedAfter`, `availableAfter` and `reason` (the supplier reference for a receipt).
+Adjustments are ADJUSTMENT movements and receipts are RECEIPT movements; each writes one ledger row and one
+audit row per changed stock row in the same transaction. Rules: removing or setting below what is reserved
+is refused (409 `STOCK_BELOW_RESERVED`); a set must state the on-hand quantity it saw (409 `STALE_STOCK`
+with `currentOnHandQuantity`); add and receipt stop at 1,000,000 on hand, the same ceiling as set (422
+`ON_HAND_LIMIT_EXCEEDED`). Adjustments and receipts are allowed for archived products and inactive
+warehouses (the goods are physically there). Low stock means a threshold above 0 and available at or below
+it, never for archived products or variants, and only in active warehouses unless
+`includeInactiveWarehouses=true`. Decisions: TD-018, TD-019, TD-020.

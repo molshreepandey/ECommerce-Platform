@@ -44,6 +44,10 @@
     "staff-login": {
       "maxRequests": 5,
       "windowSeconds": 60
+    },
+    "inventory-write": {
+      "maxRequests": 60,
+      "windowSeconds": 60
     }
   },
   "security": {

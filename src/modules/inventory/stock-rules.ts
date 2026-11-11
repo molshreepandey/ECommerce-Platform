@@ -5,6 +5,7 @@ import type {
 } from '@/generated/prisma/enums';
 
 import { inventoryErrors } from './inventory.errors';
+import { maximumOnHandQuantity } from './inventory.schema';
 
 // The ledger convention (TD-018, verified to replay every existing row): RESERVE and RELEASE change the
 // reserved quantity, DISPATCH lowers on hand and reserved together, every other type changes on hand.
@@ -118,4 +119,23 @@ export function lowStockEligible(input: {
 }): boolean {
   if (input.productStatus === 'ARCHIVED' || input.variantStatus === 'ARCHIVED') return false;
   return input.warehouseActive || input.includeInactiveWarehouses;
+}
+
+// Add and receipt stop at the same ceiling that set accepts, so every on-hand quantity can later be
+// restated with set, and the integer column can never overflow. Checked on the locked stock row. Only
+// increases are checked: a removal is always allowed.
+export function assertWithinOnHandLimit(
+  level: { variantId: string; warehouseId: string; onHandQuantity: number },
+  quantityDelta: number,
+): void {
+  const requestedOnHandQuantity = level.onHandQuantity + quantityDelta;
+  if (quantityDelta > 0 && requestedOnHandQuantity > maximumOnHandQuantity) {
+    throw inventoryErrors.onHandLimitExceeded({
+      variantId: level.variantId,
+      warehouseId: level.warehouseId,
+      onHandQuantity: level.onHandQuantity,
+      requestedOnHandQuantity,
+      maximumOnHandQuantity,
+    });
+  }
 }

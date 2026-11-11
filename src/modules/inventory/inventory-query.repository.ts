@@ -221,3 +221,19 @@ export async function availableQuantitiesByVariant(
   });
   return new Map(sums.map((sum) => [sum.variantId, sum._sum.availableQuantity ?? 0]));
 }
+
+// A page cursor must name a row that exists; otherwise the keyset comparison would silently return an
+// empty page. Products and movements are never deleted, so a cursor that existed stays valid.
+export async function productCursorExists(
+  database: DatabaseClient,
+  productId: string,
+): Promise<boolean> {
+  return (await database.product.count({ where: { id: productId } })) > 0;
+}
+
+export async function movementCursorExists(
+  database: DatabaseClient,
+  movementId: string,
+): Promise<boolean> {
+  return (await database.inventoryMovement.count({ where: { id: movementId } })) > 0;
+}

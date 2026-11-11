@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { waitForFreshRateLimitWindow } from './support/rate-limit-window';
@@ -47,5 +49,36 @@ describe('rate limiting with Redis unreachable (real connection failure)', () =>
     expect(counter?.requestCount).toBe(maxRequests + 1);
     const { connectTimeoutMilliseconds } = getConfig().redis;
     expect(elapsedMilliseconds).toBeLessThan(connectTimeoutMilliseconds + 500);
+  });
+
+  it('falls back to Postgres for the inventory write limit too, keyed by a hash of the staff id', async () => {
+    const { RateLimitExceededError } = await import('@/lib/rate-limit/rate-limit');
+    const { limitInventoryWrites } = await import('@/modules/inventory/inventory-rate-limit');
+    const { getConfig } = await import('@/lib/config');
+    const { getDatabase } = await import('@/lib/db');
+    const { staffUserIdSchema } = await import('@/lib/ids');
+    const { maxRequests, windowSeconds } = getConfig().rateLimits['inventory-write'];
+    const staffUserId = staffUserIdSchema.parse('0195f2a0-0000-7000-8000-00000000abcd');
+    const staff = { staffUserId, sessionId: 'session', permissionCodes: new Set<never>() };
+    const other = {
+      ...staff,
+      staffUserId: staffUserIdSchema.parse('0195f2a0-0000-7000-8000-00000000dcba'),
+    };
+    await waitForFreshRateLimitWindow(windowSeconds, 8_000);
+
+    for (let attempt = 0; attempt < maxRequests; attempt += 1) await limitInventoryWrites(staff);
+    await expect(limitInventoryWrites(staff)).rejects.toBeInstanceOf(RateLimitExceededError);
+    await expect(limitInventoryWrites(other)).resolves.toBeUndefined();
+
+    const counters = await getDatabase().rateLimitCounter.findMany({
+      select: { bucketKey: true, requestCount: true },
+      orderBy: { requestCount: 'desc' },
+    });
+    // The bucket keys are exactly the SHA-256 of each staff id, never the id itself.
+    const hashOf = (value: string) => createHash('sha256').update(value).digest('hex');
+    expect(counters).toEqual([
+      { bucketKey: `inventory-write:${hashOf(staffUserId)}`, requestCount: maxRequests + 1 },
+      { bucketKey: `inventory-write:${hashOf(other.staffUserId)}`, requestCount: 1 },
+    ]);
   });
 });

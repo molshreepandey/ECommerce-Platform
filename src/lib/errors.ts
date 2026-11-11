@@ -5,7 +5,8 @@ export type DomainErrorKind =
   | 'NOT_FOUND'
   | 'CONFLICT'
   | 'UNPROCESSABLE'
-  | 'RATE_LIMITED';
+  | 'RATE_LIMITED'
+  | 'UNAVAILABLE';
 
 export const httpStatusByErrorKind: Record<DomainErrorKind, number> = {
   VALIDATION: 400,
@@ -15,6 +16,7 @@ export const httpStatusByErrorKind: Record<DomainErrorKind, number> = {
   CONFLICT: 409,
   UNPROCESSABLE: 422,
   RATE_LIMITED: 429,
+  UNAVAILABLE: 503,
 };
 
 export interface ErrorEnvelope {
@@ -60,4 +62,21 @@ export function buildErrorEnvelope(
   details: unknown = null,
 ): ErrorEnvelope {
   return { error: { code, message, details } };
+}
+
+// A database transaction ran out of time and was rolled back in full (nothing was committed), so the
+// client may send the same request again; idempotent requests reuse their key.
+export class TransactionTimeoutError extends DomainError {
+  constructor() {
+    super({
+      kind: 'UNAVAILABLE',
+      code: 'TRANSACTION_TIMEOUT',
+      message: 'The server was busy and nothing was changed. Try again.',
+      details: { retryable: true },
+    });
+  }
+
+  override responseHeaders(): Record<string, string> {
+    return { 'Retry-After': '1' };
+  }
 }

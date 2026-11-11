@@ -48,7 +48,10 @@ import { lockWarehousesForShare } from './warehouse.repository';
 //   L3  variants of the reserve lines FOR SHARE
 //   L4  warehouses of the reserve lines FOR SHARE
 //   L5  every stock row of every line FOR UPDATE
-//   then RESERVE / RELEASE movements, one audit row each, and search updates.
+//   then the lines are applied in lineOrder: by stock row, and on each stock row every RELEASE before any
+//   RESERVE (then by shipment), so a re-allocation can reserve the units it frees; one RELEASE or RESERVE
+//   movement and one audit row per line, then search updates. The apply order never changes the lock
+//   order above: each lock helper sorts its own keys.
 
 export interface ReservationResult {
   movements: MovementResult[];

@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { InventoryMovementType } from '@/generated/prisma/enums';
 import { DomainError } from '@/lib/errors';
 
+import { maximumOnHandQuantity } from './inventory.schema';
 import {
   adjustmentDelta,
+  assertWithinOnHandLimit,
   isLowStock,
   isReservable,
   lowStockEligible,
@@ -191,5 +193,36 @@ describe('lowStockEligible', () => {
         includeInactiveWarehouses: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('assertWithinOnHandLimit', () => {
+  const level = { variantId: 'v', warehouseId: 'w', onHandQuantity: maximumOnHandQuantity - 5 };
+
+  it('allows reaching the ceiling exactly, and any removal', () => {
+    expect(() => {
+      assertWithinOnHandLimit(level, 5);
+    }).not.toThrow();
+    expect(() => {
+      assertWithinOnHandLimit({ ...level, onHandQuantity: maximumOnHandQuantity + 10 }, -1);
+    }).not.toThrow();
+  });
+
+  it('refuses going one above the ceiling with 422 ON_HAND_LIMIT_EXCEEDED and the numbers', () => {
+    try {
+      assertWithinOnHandLimit(level, 6);
+      throw new Error('expected a DomainError');
+    } catch (error) {
+      expect(error).toBeInstanceOf(DomainError);
+      expect(error).toMatchObject({
+        httpStatus: 422,
+        code: 'ON_HAND_LIMIT_EXCEEDED',
+        details: {
+          onHandQuantity: maximumOnHandQuantity - 5,
+          requestedOnHandQuantity: maximumOnHandQuantity + 1,
+          maximumOnHandQuantity,
+        },
+      });
+    }
   });
 });

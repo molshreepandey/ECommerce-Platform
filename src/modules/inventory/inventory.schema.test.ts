@@ -15,6 +15,7 @@ import {
   reservationChangesSchema,
   setLowStockThresholdSchema,
   setStockSchema,
+  stockAdjustmentSchema,
   updateWarehouseSchema,
 } from './inventory.schema';
 
@@ -311,5 +312,90 @@ describe('list query schemas', () => {
     ]) {
       expect(listLowStockSchema.safeParse({ cursor }).success, cursor).toBe(false);
     }
+  });
+});
+
+describe('stockAdjustmentSchema (HTTP body for add, remove and set)', () => {
+  it('accepts each operation with exactly its own fields', () => {
+    expect(
+      stockAdjustmentSchema.parse({
+        operation: 'ADD',
+        ...location,
+        quantity: 2,
+        reason: ' Found  ',
+      }),
+    ).toEqual({ operation: 'ADD', ...location, quantity: 2, reason: 'Found' });
+    expect(
+      stockAdjustmentSchema.parse({
+        operation: 'REMOVE',
+        ...location,
+        quantity: 1,
+        reason: 'Damaged',
+      }).operation,
+    ).toBe('REMOVE');
+    expect(
+      stockAdjustmentSchema.parse({
+        operation: 'SET',
+        ...location,
+        expectedOnHandQuantity: 4,
+        newOnHandQuantity: 6,
+        reason: 'Recount',
+      }).operation,
+    ).toBe('SET');
+  });
+
+  it('refuses an unknown operation, a missing one, or fields that belong to another operation', () => {
+    for (const body of [
+      { ...location, quantity: 1, reason: 'No operation' },
+      { operation: 'TRANSFER', ...location, quantity: 1, reason: 'Unknown' },
+      { operation: 'ADD', ...location, quantity: 1, reason: 'Extra', newOnHandQuantity: 3 },
+      { operation: 'SET', ...location, quantity: 1, reason: 'Wrong fields' },
+      { operation: 'ADD', ...location, quantity: 0, reason: 'Zero' },
+      { operation: 'ADD', variantId: 'not-a-uuid', warehouseId, quantity: 1, reason: 'Bad id' },
+    ]) {
+      expect(stockAdjustmentSchema.safeParse(body).success, JSON.stringify(body)).toBe(false);
+    }
+  });
+});
+
+describe('upper-case ids in receipts and thresholds', () => {
+  const upperVariantId = variantId.toUpperCase();
+  const upperWarehouseId = warehouseId.toUpperCase();
+
+  it('lower-cases receipt and threshold ids, as PostgreSQL returns them', () => {
+    const receipt = receiveStockSchema.parse({
+      warehouseId: upperWarehouseId,
+      supplierReference: 'PO-1',
+      lines: [{ variantId: upperVariantId, quantity: 2 }],
+    });
+    expect(receipt.warehouseId).toBe(warehouseId);
+    expect(receipt.lines).toEqual([{ variantId, quantity: 2 }]);
+    expect(
+      setLowStockThresholdSchema.parse({
+        variantId: upperVariantId,
+        warehouseId: upperWarehouseId,
+        lowStockThreshold: 3,
+      }),
+    ).toEqual({ variantId, warehouseId, lowStockThreshold: 3 });
+  });
+
+  it('refuses a receipt naming the same variant twice in different letter case', () => {
+    const result = receiveStockSchema.safeParse({
+      warehouseId,
+      supplierReference: 'PO-2',
+      lines: [
+        { variantId, quantity: 1 },
+        { variantId: upperVariantId, quantity: 1 },
+      ],
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map(({ message }) => message)).toContain('Each variant once');
+  });
+
+  it('keeps the letter case of adjustment ids (part of their idempotency fingerprint)', () => {
+    expect(
+      addStockSchema.parse({ variantId: upperVariantId, warehouseId, quantity: 1, reason: 'Found' })
+        .variantId,
+    ).toBe(upperVariantId);
   });
 });

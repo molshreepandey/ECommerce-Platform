@@ -42,6 +42,19 @@ export const idempotencyKeySchema = z
 
 const stockLocation = { variantId: variantIdSchema, warehouseId: warehouseIdSchema };
 
+// z.uuid() accepts upper-case hex, while PostgreSQL returns ids in lower case. Receipts and thresholds
+// match their input against ids read back from the database (map lookups, "each variant once"), so their
+// ids are lower-cased first. Adjustments keep the shared schemas: they never look ids up in such a map,
+// and an id's letter case stays part of their idempotency fingerprint (TD-020).
+const lowerCaseVariantIdSchema = z
+  .string()
+  .transform((value) => value.toLowerCase())
+  .pipe(variantIdSchema);
+const lowerCaseWarehouseIdSchema = z
+  .string()
+  .transform((value) => value.toLowerCase())
+  .pipe(warehouseIdSchema);
+
 export const addStockSchema = z.strictObject({
   ...stockLocation,
   quantity: stockQuantitySchema,
@@ -60,12 +73,21 @@ export const setStockSchema = z.strictObject({
 });
 export type SetStockInput = z.infer<typeof setStockSchema>;
 
+// One HTTP body for the three manual adjustments; `operation` picks the rule and is not passed on (the
+// service's own operation name is part of the idempotency fingerprint).
+export const stockAdjustmentSchema = z.discriminatedUnion('operation', [
+  addStockSchema.extend({ operation: z.literal('ADD') }),
+  removeStockSchema.extend({ operation: z.literal('REMOVE') }),
+  setStockSchema.extend({ operation: z.literal('SET') }),
+]);
+export type StockAdjustmentInput = z.infer<typeof stockAdjustmentSchema>;
+
 // Lines are sorted by variant, so the same receipt always has the same fingerprint and lock order.
 export const receiveStockSchema = z.strictObject({
-  warehouseId: warehouseIdSchema,
+  warehouseId: lowerCaseWarehouseIdSchema,
   supplierReference: supplierReferenceSchema,
   lines: z
-    .array(z.strictObject({ variantId: variantIdSchema, quantity: stockQuantitySchema }))
+    .array(z.strictObject({ variantId: lowerCaseVariantIdSchema, quantity: stockQuantitySchema }))
     .min(1, 'Add at least one line')
     .max(maximumLinesPerRequest)
     .refine((lines) => new Set(lines.map(({ variantId }) => variantId)).size === lines.length, {
@@ -78,7 +100,8 @@ export const receiveStockSchema = z.strictObject({
 export type ReceiveStockInput = z.infer<typeof receiveStockSchema>;
 
 export const setLowStockThresholdSchema = z.strictObject({
-  ...stockLocation,
+  variantId: lowerCaseVariantIdSchema,
+  warehouseId: lowerCaseWarehouseIdSchema,
   lowStockThreshold: z.int('Enter a whole number').min(0).max(maximumLowStockThreshold),
 });
 export type SetLowStockThresholdInput = z.infer<typeof setLowStockThresholdSchema>;

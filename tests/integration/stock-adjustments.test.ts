@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { beforeEach, describe, expect, it } from 'vitest';
+import { z, ZodError } from 'zod';
 
 import { getDatabase } from '@/lib/db';
 import { variantIdSchema, warehouseIdSchema } from '@/lib/ids';
@@ -18,7 +19,8 @@ import {
   stockedLocation,
   stockLevel,
 } from './support/inventory-fixtures';
-import { truncateAllTestTables } from './support/test-database';
+import { assertConnectedDatabaseName } from '../support/test-target-guard';
+import { currentDatabaseName, truncateAllTestTables } from './support/test-database';
 
 const database = getDatabase();
 const unknownId = '0195f2a0-0000-7000-8000-000000000999';
@@ -40,6 +42,23 @@ function movementAudits() {
       after: true,
     },
   });
+}
+
+// Test-only trigger and function for the database-failure rollback test (ecommerce_test only).
+async function dropTestOnlyTrigger(): Promise<void> {
+  await database.$executeRawUnsafe(
+    'DROP TRIGGER IF EXISTS test_refuse_second_line ON inventory_levels',
+  );
+  await database.$executeRawUnsafe('DROP FUNCTION IF EXISTS test_refuse_second_line()');
+}
+
+async function testOnlyTriggerObjects(): Promise<{ triggers: number; functions: number }> {
+  const [row] = z.tuple([z.object({ triggers: z.number(), functions: z.number() })]).parse(
+    await database.$queryRaw`
+        SELECT (SELECT count(*)::int FROM pg_trigger WHERE tgname = 'test_refuse_second_line') AS triggers,
+               (SELECT count(*)::int FROM pg_proc WHERE proname = 'test_refuse_second_line') AS functions`,
+  );
+  return row;
 }
 
 beforeEach(async () => {
@@ -184,7 +203,7 @@ describe('adding and removing stock (ADJUSTMENT)', () => {
     ).rejects.toMatchObject({ code: 'WAREHOUSE_NOT_FOUND', httpStatus: 404 });
     await expect(
       addStock(actor, 'short', { ...key, quantity: 1, reason: 'Count' }),
-    ).rejects.toThrow();
+    ).rejects.toBeInstanceOf(ZodError);
     expect(await database.inventoryChangeRequest.count()).toBe(0);
   });
 
@@ -384,12 +403,13 @@ describe('receiving stock from a supplier (RECEIPT)', () => {
 });
 
 describe('atomicity: a failure part-way leaves nothing behind', () => {
-  it('rolls back a receipt whose second line fails in the database after the first line changed', async () => {
+  it('rolls back a receipt whose second line is refused after the first line changed', async () => {
     const staff = await createStaffMember(['inventory.write']);
     const actor = staffInventoryActor(staff);
     const { key } = await stockedLocation({ onHandQuantity: 5 });
     const second = await createVariantRow();
-    // The second line (in variant order) overflows PostgreSQL's integer, after the first line was applied.
+    // The second line (in variant order) would overflow PostgreSQL's integer; the on-hand ceiling (L44)
+    // refuses it after the first line was applied, so the rollback of the first line is what is tested.
     const [firstVariant, lastVariant] = [key.variantId, second.variantId].sort();
     if (firstVariant === undefined || lastVariant === undefined)
       throw new Error('two variants expected');
@@ -420,11 +440,78 @@ describe('atomicity: a failure part-way leaves nothing behind', () => {
         { variantId: lastVariant, quantity: 100 },
       ],
     });
-    await expect(receiveStock(actor, idempotencyKey, input)).rejects.toThrow(
-      /out of range|overflow/i,
-    );
+    await expect(receiveStock(actor, idempotencyKey, input)).rejects.toMatchObject({
+      code: 'ON_HAND_LIMIT_EXCEEDED',
+    });
     expect(await inventoryState()).toEqual(before);
     expect(await database.auditLog.count()).toBe(0);
+  });
+
+  it('rolls back a receipt when PostgreSQL itself fails on the second line after the first was applied', async () => {
+    const { actor, key } = await stockedLocation({ onHandQuantity: 5 });
+    const second = await createVariantRow();
+    await createStockLevelRow({
+      variantId: second.variantId,
+      warehouseId: key.warehouseId,
+      onHandQuantity: 5,
+    });
+    const [firstVariant, lastVariant] = [key.variantId, second.variantId].sort();
+    if (firstVariant === undefined || lastVariant === undefined)
+      throw new Error('two variants expected');
+    // A test-only trigger on ecommerce_test makes PostgreSQL raise an error while updating the second
+    // line's row (lines run in variant order). It first checks, inside the same transaction, whether the
+    // first line's update is already visible, and says so in the error, so the test proves the failure
+    // came after the first line changed.
+    const idempotencyKey = randomUUID();
+    const input = receiveStockSchema.parse({
+      warehouseId: key.warehouseId,
+      supplierReference: 'INV-DB-FAILURE',
+      lines: [
+        { variantId: firstVariant, quantity: 10 },
+        { variantId: lastVariant, quantity: 10 },
+      ],
+    });
+    assertConnectedDatabaseName(await currentDatabaseName());
+    await dropTestOnlyTrigger(); // leftovers of an interrupted earlier run
+    let testPassed = false;
+    try {
+      await database.$executeRawUnsafe(`
+        CREATE FUNCTION test_refuse_second_line() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM inventory_levels WHERE variant_id = '${firstVariant}'::uuid
+                     AND warehouse_id = '${key.warehouseId}'::uuid AND on_hand_quantity = 15) THEN
+            RAISE EXCEPTION 'injected failure: first line already applied';
+          END IF;
+          RAISE EXCEPTION 'injected failure: first line not applied';
+        END $$`);
+      await database.$executeRawUnsafe(`
+        CREATE TRIGGER test_refuse_second_line BEFORE UPDATE ON inventory_levels FOR EACH ROW
+        WHEN (NEW.variant_id = '${lastVariant}'::uuid) EXECUTE FUNCTION test_refuse_second_line()`);
+      const before = await inventoryState();
+      await expect(receiveStock(actor, idempotencyKey, input)).rejects.toThrow(
+        /injected failure: first line already applied/,
+      );
+      expect(await inventoryState()).toEqual(before);
+      expect(await database.inventoryChangeRequest.count()).toBe(0);
+      expect(await database.auditLog.count()).toBe(0);
+      testPassed = true;
+    } finally {
+      // Removes whatever was created, even after a partial failure. A cleanup error is raised only when
+      // the test itself passed, so it never hides the original failure (the next run cleans up first).
+      try {
+        await dropTestOnlyTrigger();
+      } catch (cleanupError) {
+        if (testPassed) throw cleanupError;
+      }
+    }
+    expect(await testOnlyTriggerObjects()).toEqual({ triggers: 0, functions: 0 });
+    // With the cause gone, the same key runs as a new request and applies both lines once.
+    const retried = await receiveStock(actor, idempotencyKey, input);
+    expect(retried.replayed).toBe(false);
+    expect(await stockLevel(key)).toMatchObject({ onHandQuantity: 15 });
+    expect(
+      await stockLevel({ variantId: second.variantId, warehouseId: key.warehouseId }),
+    ).toMatchObject({ onHandQuantity: 15 });
   });
 
   it('leaves no request row after a failure, so the same key can run again once the cause is fixed', async () => {

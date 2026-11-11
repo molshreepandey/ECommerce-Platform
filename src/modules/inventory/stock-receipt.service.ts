@@ -5,7 +5,11 @@ import { enqueueProductsOfVariants } from '@/modules/search/search-outbox.reposi
 import { idempotentStockChange } from './idempotent-stock-request';
 import { actorColumns, type StaffInventoryActor } from './inventory-actor';
 import { recordInventoryEvents } from './inventory-audit';
-import { idempotencyKeySchema, type ReceiveStockInput } from './inventory.schema';
+import {
+  idempotencyKeySchema,
+  type ReceiveStockInput,
+  receiveStockSchema,
+} from './inventory.schema';
 import { changeRequestReferenceType, insertMovements } from './inventory-movement.repository';
 import {
   changeOnHand,
@@ -15,6 +19,7 @@ import {
 } from './stock-level.repository';
 import { assertStockLocationsExist } from './stock-locations';
 import type { StockRequestResult } from './stock-request-result';
+import { assertWithinOnHandLimit } from './stock-rules';
 
 // Physical stock received from a supplier: always RECEIPT movements (never ADJUSTMENT), one per line,
 // each carrying the supplier reference as its reason. Allowed for archived variants and inactive
@@ -22,10 +27,13 @@ import type { StockRequestResult } from './stock-request-result';
 export async function receiveStock(
   actor: StaffInventoryActor,
   idempotencyKey: string,
-  input: ReceiveStockInput,
+  receipt: ReceiveStockInput,
 ): Promise<StockRequestResult> {
   assertStaffPermission(actor.staff, 'inventory.write');
   const key = idempotencyKeySchema.parse(idempotencyKey);
+  // Normalised here as well as at the boundary (sorted lines, trimmed reference), so the idempotency
+  // fingerprint never depends on how a caller built the input.
+  const input = receiveStockSchema.parse(receipt);
   const variantIds = input.lines.map(({ variantId }) => variantId);
   await assertStockLocationsExist(getDatabase(), { warehouseId: input.warehouseId, variantIds });
   const keys = variantIds.map((variantId) => ({ variantId, warehouseId: input.warehouseId }));
@@ -39,6 +47,7 @@ export async function receiveStock(
       const changed: { before: StockLevelRow; after: StockLevelRow }[] = [];
       for (const line of input.lines) {
         const previous = before.get(line.variantId);
+        if (previous !== undefined) assertWithinOnHandLimit(previous, line.quantity);
         const after = await changeOnHand(
           transaction,
           { variantId: line.variantId, warehouseId: input.warehouseId },

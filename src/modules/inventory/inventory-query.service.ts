@@ -7,6 +7,7 @@ import type {
 import { type DatabaseClient, getDatabase } from '@/lib/db';
 import { assertStaffPermission, type StaffContext } from '@/modules/identity/access-control';
 
+import { inventoryErrors } from './inventory.errors';
 import type {
   ListLowStockInput,
   ListMovementsInput,
@@ -16,7 +17,9 @@ import {
   availableQuantitiesByVariant,
   countLowStockRows,
   lowStockPage,
+  movementCursorExists,
   movementLabels,
+  productCursorExists,
   stockMatrixProductPage,
   stockMatrixProducts,
 } from './inventory-query.repository';
@@ -60,6 +63,9 @@ export async function listStockLevels(
 ): Promise<{ items: StockMatrixProduct[]; nextCursor: string | null }> {
   assertStaffPermission(staff, 'inventory.read');
   const database = getDatabase();
+  if (input.cursor !== undefined && !(await productCursorExists(database, input.cursor))) {
+    throw inventoryErrors.invalidCursor();
+  }
   const page = await stockMatrixProductPage(database, {
     search: input.search,
     warehouseId: input.warehouseId,
@@ -187,6 +193,9 @@ export async function listMovements(
 ): Promise<{ movements: LedgerMovement[]; nextCursor: string | null }> {
   assertStaffPermission(staff, 'inventory.read');
   const database = getDatabase();
+  if (input.cursor !== undefined && !(await movementCursorExists(database, input.cursor))) {
+    throw inventoryErrors.invalidCursor();
+  }
   const page = await listMovementPage(database, {
     filters: {
       warehouseId: input.warehouseId,

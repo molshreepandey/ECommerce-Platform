@@ -2,8 +2,9 @@ import { connection, type NextRequest } from 'next/server';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 
-import { buildErrorEnvelope, DomainError } from '@/lib/errors';
 import { getConfig } from '@/lib/config';
+import { isTransactionTimeout } from '@/lib/db';
+import { buildErrorEnvelope, DomainError, TransactionTimeoutError } from '@/lib/errors';
 import { createRequestLogger } from '@/lib/logger';
 import { REQUEST_ID_HEADER, SURFACE_HEADER } from '@/lib/request-headers';
 import { checkRequestOrigin, OriginNotAllowedError } from '@/lib/request-origin';
@@ -36,7 +37,12 @@ function respondWithJson(
   });
 }
 
-function errorToResponse(error: unknown, requestContext: RequestContext): Response {
+function errorToResponse(thrown: unknown, requestContext: RequestContext): Response {
+  if (isTransactionTimeout(thrown)) {
+    // The client gets a plain retryable 503; the original Prisma message stays in the server log.
+    requestContext.logger.warn({ err: thrown }, 'transaction timeout');
+  }
+  const error = isTransactionTimeout(thrown) ? new TransactionTimeoutError() : thrown;
   if (error instanceof DomainError) {
     requestContext.logger.info({ errorCode: error.code }, 'domain error');
     return respondWithJson(
