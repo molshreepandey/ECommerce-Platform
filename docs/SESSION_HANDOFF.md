@@ -1,10 +1,10 @@
 # Session handoff
 
-Updated 2026-11-11 after the Wave 5 step 2 commit (`ef16d46`, local, not pushed). Resume from exactly this state. Do **not**
+Updated 2026-11-11 after Wave 5 step 2 was pushed (`ef16d46` and `9c1f691`). Resume from exactly this state. Do **not**
 recreate the project, reset any database, commit, push, or start Wave 5 step 3 (admin API) or any later
 work without the owner's explicit approval.
 
-## Latest: Wave 5 step 2, inventory services (2026-11-11, commit `ef16d46`, not pushed)
+## Latest: Wave 5 step 2, inventory services (2026-11-11, complete; commits `ef16d46` and `9c1f691`, pushed)
 
 - `src/modules/inventory/`: warehouses; idempotent staff stock changes (add, remove, set as ADJUSTMENT;
   supplier receipts as RECEIPT); low-stock thresholds; internal `reserveStock`, `releaseReservation` and
@@ -20,10 +20,13 @@ work without the owner's explicit approval.
 - Full regression (2026-11-11, guarded `ecommerce_test`): 332 unit, 351 integration, 56 HTTP and 52
   browser tests pass; build, format, lint, typecheck and `git diff --check` pass. No schema or migration
   change. Development untouched: fingerprint still `9cec751c29cab1faab002a9308e23887`.
-- Git: committed locally as `ef16d46` (50 files, parent `f6c018b`), followed by a documentation-only
-  commit recording the N1 fix and the regression; neither is pushed.
-- Next: the owner's approval to push, then plan step 3 (admin API: `Idempotency-Key` header, schemas at
-  the boundary, retryable transaction-timeout error, aligned quantity limits, cursor validation).
+- Git: implementation commit `ef16d46a48e7318e9a711d6aabec7d41d07a7844` (50 files, parent `f6c018b`) and
+  documentation follow-up `9c1f691963253c1292d9be125858b5651dc99cb5` (5 files), both pushed to GitHub on
+  2026-11-11 (fast-forward `f6c018b..9c1f691`). After the push local `main` and `origin/main` were in sync
+  and the working tree was clean.
+- Next: Wave 5 step 3 (admin inventory API) has **not started** and needs the owner's explicit approval;
+  its plan covers the `Idempotency-Key` header, schemas at the boundary, a retryable transaction-timeout
+  error, aligned quantity limits and cursor validation.
 
 ## Wave 5 step 1, inventory ledger migration foundation (2026-11-10, commit `f6c018b`, pushed)
 
@@ -100,18 +103,18 @@ work without the owner's explicit approval.
 - **Waves 1–4 are finished, committed and pushed.** Wave 2B includes final check 7 (client IP behind
   proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
 - **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
-  development; step 2 (inventory services) is committed locally (`ef16d46`) but not pushed; steps 3 (admin API) and 4
-  (admin pages) are not started.
+  development; step 2 (inventory services) is complete, committed and pushed (`ef16d46`, `9c1f691`); steps 3
+  (admin API) and 4 (admin pages) are not started and need the owner's explicit approval.
 
-## Git state (2026-11-11, Wave 5 step 2)
+## Git state (2026-11-11, after the Wave 5 step 2 push)
 
-| Item                      | Value                                                                                                                                                  |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Branch                    | `main`                                                                                                                                                 |
-| HEAD                      | the documentation follow-up to Wave 5 step 2; its parent is `ef16d46` (Wave 5 step 2), whose parent is `f6c018b` (Wave 5 step 1)                       |
-| Relative to `origin/main` | 2 ahead (`ef16d46` and the documentation follow-up), not pushed; `origin/main` is `f6c018b`, pushed on 2026-11-10 as a fast-forward `e0c3895..f6c018b` |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1)     |
-| Working tree              | clean                                                                                                                                                  |
+| Item                      | Value                                                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Branch                    | `main`                                                                                                                                                                              |
+| HEAD                      | `9c1f691` (Wave 5 step 2 documentation follow-up), parent `ef16d46` (Wave 5 step 2), whose parent is `f6c018b` (Wave 5 step 1)                                                      |
+| Relative to `origin/main` | in sync: `origin/main` is `9c1f691`, pushed on 2026-11-11 as a fast-forward `f6c018b..9c1f691`                                                                                      |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691` (5 step 2) |
+| Working tree              | clean after the push                                                                                                                                                                |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -227,13 +230,13 @@ not a database result.
 
 ## Pending items
 
-| #   | Item                                             | Status                                                             |
-| --- | ------------------------------------------------ | ------------------------------------------------------------------ |
-| 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)                             |
-| 2   | Wave 5 step 2 inventory services                 | done; N1 fixed; committed locally (`ef16d46`)                      |
-| 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser)   |
-| 4   | Wave 5 steps 3–4 (admin API and pages)           | not approved yet                                                   |
-| 5   | Push to GitHub                                   | up to `f6c018b`; step 2 and its documentation follow-up not pushed |
+| #   | Item                                             | Status                                                           |
+| --- | ------------------------------------------------ | ---------------------------------------------------------------- |
+| 1   | Wave 5 step 1 migrations on test and development | done; committed and pushed (`f6c018b`)                           |
+| 2   | Wave 5 step 2 inventory services                 | complete; N1 fixed; committed and pushed (`ef16d46`, `9c1f691`)  |
+| 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser) |
+| 4   | Wave 5 steps 3–4 (admin API and pages)           | not started; needs the owner's explicit approval                 |
+| 5   | Push to GitHub                                   | done 2026-11-11: `origin/main` is `9c1f691`                      |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
@@ -245,10 +248,11 @@ Deployment requirement (not a finished production setting): staging and producti
 
 ## Exact next steps
 
-1. Check that nothing changed: `main` is two commits ahead of `origin/main` (`f6c018b`): `ef16d46` (Wave 5
-   step 2) and its documentation follow-up; the working tree is clean; the development fingerprint is
-   `9cec751c…`; both databases record five migrations; three healthy containers.
-2. Wait for the owner's approval before pushing or starting Wave 5 step 3. Do not seed development, or reset or truncate any
+1. Check that nothing changed: `origin/main` contains `9c1f691` (Wave 5 step 2 documentation follow-up)
+   and `git status -sb` shows the working tree clean; any commit after `9c1f691` should be documentation
+   only; the development fingerprint is `9cec751c…`; both databases record five migrations; three
+   healthy containers.
+2. Wait for the owner's approval before committing, pushing, or starting Wave 5 step 3. Do not seed development, or reset or truncate any
    database without explicit approval.
 
 ## Rules still in force

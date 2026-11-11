@@ -14,8 +14,9 @@ each entry was written; this list is the current status.
 - [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10; `origin/main` is `e0c3895`)
 - [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: commit `f6c018b`, pushed;
       applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
-      inventory services: commit `ef16d46` (local, **not pushed**), after the N1 fix and a full regression
-      (332 unit, 351 integration, 56 HTTP, 52 browser). Steps 3 (admin API) and 4 (admin pages) not started.
+      inventory services: **complete**; commit `ef16d46` plus documentation follow-up `9c1f691`, both pushed to
+      GitHub on 2026-11-11, after the N1 fix and a full regression (332 unit, 351 integration, 56 HTTP, 52
+      browser). Steps 3 (admin API) and 4 (admin pages) not started; step 3 needs the owner's explicit approval.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -1952,13 +1953,13 @@ no commit or push. Evidence and the full command log: `~/ecommerce-backups/20261
 **New development fingerprint baseline:** `9cec751c29cab1faab002a9308e23887` (47 tables) from now on. The
 previous `04adce08…` is the state before these migrations.
 
-## Wave 5 step 2: inventory services (2026-11-10 to 2026-11-11, done; commit `ef16d46`, not pushed)
+## Wave 5 step 2: inventory services (2026-11-10 to 2026-11-11, complete; commits `ef16d46` and `9c1f691`, pushed)
 
 Owner-approved plan with five decisions, four improvements, four follow-up decisions and the L0b lock-order
 correction, implemented in six approved checkpoints, each stopped for review. Not done, by instruction: no
 HTTP routes or pages, no dispatch, cancellation or order code, no schema or migration change, no write to
-development, no push. Committed locally as `ef16d46` after the N1 fix and a full regression, both
-approved by the owner. Rules and the caller contract: TD-019; ledger and idempotency: TD-018.
+development. Committed as `ef16d46` after the N1 fix and a full regression, then pushed with its
+documentation follow-up `9c1f691`, each step approved by the owner. Rules and the caller contract: TD-019; ledger and idempotency: TD-018.
 
 ### What was built
 
@@ -2032,14 +2033,18 @@ reserve 2 for shipment A, same variant and warehouse) failed with 409 `OUT_OF_ST
 - Mutation check: with the old comparator restored temporarily, the case where A's id sorts first failed
   and the other passed; the fixed file was then restored byte for byte.
 
-### Full regression and commit (2026-11-11)
+### Full regression, commit and push (2026-11-11)
 
 Node v26.13.0, each suite run one after another on the guarded `ecommerce_test` (test target and guard
 checked first): `npm run test:integration` 351 / 351; `npm run build`, then `npm run start:test` (resets
 `ecommerce_test` to the demo identity seed, as documented); `npm run test:http` 56 / 56; `npm run test:e2e`
 52 / 52; `npm test` 332 / 332; `npm run format:check`, `npm run lint`, `npm run typecheck` and
 `git diff --check` all exit 0. No test failed or was skipped. Committed as `ef16d46` ("Wave 5 step 2:
-inventory services, reservations and query layer", 50 files, parent `f6c018b`); not pushed.
+inventory services, reservations and query layer", 50 files, parent `f6c018b`), followed by the
+documentation-only commit `9c1f691` ("Wave 5 step 2: record N1 fix, full regression and commit in docs", 5
+files). Both were pushed with the owner's approval by `git push origin main` (fast-forward
+`f6c018b..9c1f691`, no force). After the push local `main` and `origin/main` were both `9c1f691`, the branch
+was up to date and the working tree was clean.
 
 ### Databases
 
