@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addStockSchema,
   changeWarehouseStatusSchema,
+  customerReturnLinesSchema,
   createWarehouseSchema,
   idempotencyKeySchema,
   listLowStockSchema,
@@ -15,6 +16,7 @@ import {
   reservationChangesSchema,
   setLowStockThresholdSchema,
   setStockSchema,
+  shipmentStockLinesSchema,
   stockAdjustmentSchema,
   updateWarehouseSchema,
 } from './inventory.schema';
@@ -397,5 +399,59 @@ describe('upper-case ids in receipts and thresholds', () => {
       addStockSchema.parse({ variantId: upperVariantId, warehouseId, quantity: 1, reason: 'Found' })
         .variantId,
     ).toBe(upperVariantId);
+  });
+});
+
+describe('dispatch and restock line schemas', () => {
+  const shipmentId = randomUUID();
+  const returnRequestId = randomUUID();
+
+  it('lower-cases every id of a shipment line', () => {
+    expect(
+      shipmentStockLinesSchema.parse([
+        {
+          shipmentId: shipmentId.toUpperCase(),
+          variantId: variantId.toUpperCase(),
+          warehouseId: warehouseId.toUpperCase(),
+          quantity: 2,
+        },
+      ]),
+    ).toEqual([{ shipmentId, variantId, warehouseId, quantity: 2 }]);
+  });
+
+  it('refuses no lines, too many lines, a zero quantity and a repeated line in any letter case', () => {
+    const line = { shipmentId, ...location, quantity: 1 };
+    expect(shipmentStockLinesSchema.safeParse([]).success).toBe(false);
+    expect(
+      shipmentStockLinesSchema.safeParse(
+        Array.from({ length: maximumLinesPerRequest + 1 }, () => ({
+          ...line,
+          variantId: randomUUID(),
+        })),
+      ).success,
+    ).toBe(false);
+    expect(shipmentStockLinesSchema.safeParse([{ ...line, quantity: 0 }]).success).toBe(false);
+    const repeated = shipmentStockLinesSchema.safeParse([
+      line,
+      { ...line, shipmentId: shipmentId.toUpperCase() },
+    ]);
+    expect(repeated.error?.issues.map(({ message }) => message)).toContain(
+      'Each shipment, variant and warehouse once',
+    );
+  });
+
+  it('takes a customer return line without a warehouse and refuses a repeated variant', () => {
+    const line = { returnRequestId: returnRequestId.toUpperCase(), variantId, quantity: 1 };
+    expect(customerReturnLinesSchema.parse([line])).toEqual([
+      { returnRequestId, variantId, quantity: 1 },
+    ]);
+    expect(customerReturnLinesSchema.safeParse([{ ...line, warehouseId }]).success).toBe(false);
+    const repeated = customerReturnLinesSchema.safeParse([
+      line,
+      { ...line, variantId: variantId.toUpperCase() },
+    ]);
+    expect(repeated.error?.issues.map(({ message }) => message)).toContain(
+      'Each return request and variant once',
+    );
   });
 });

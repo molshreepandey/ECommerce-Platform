@@ -1,10 +1,29 @@
 # Session handoff
 
-Updated 2026-11-12 at the end of Wave 5 step 4 (admin inventory pages: done and verified, **not committed**).
-Resume from exactly this state. Do **not** recreate the project, reset any database, commit, push, or start
-Wave 5 step 5 or any later work without the owner's explicit approval.
+Updated 2026-11-12 at the end of Wave 5 step 5 (dispatch and restock primitives and Wave 5 close-out: done
+and verified, **not committed**). Resume from exactly this state. Do **not** recreate the project, reset
+any database, commit, push, or start Wave 6 or any later work without the owner's explicit approval.
 
-## Latest: Wave 5 step 4, admin inventory pages (2026-11-12, done, NOT committed)
+## Latest: Wave 5 step 5, dispatch and restock primitives, Wave 5 close-out (2026-11-12, done, NOT committed)
+
+- Internal inventory functions the plan lists for Wave 5 (no HTTP route, no schema or migration change):
+  `dispatchReservedStock` (Wave 9 shipments), `restockReturnedShipment` (RTO received, Wave 9) and
+  `restockCustomerReturn` (customer returns, Wave 12); the plan's `restockReturnedQuantity` is the last two.
+  Decisions TD-022; journal "Wave 5 step 5".
+- Every limit is a per-reference ledger sum read in one grouped query under the stock-row locks; every
+  line is checked before the first change; duplicates are refused 409. Caller contract as TD-019, plus:
+  one inventory call per transaction.
+- Close-out: plan Wave 5 "Done when" and test list checked against the code; `docs/walkthroughs/wave-5.md`;
+  new limitations L59 (D24 courier pickup registration, Wave 9) and L60 (no return-request lock, Wave 12).
+- One independent review (READY, eight low and three informational findings), fixed in one round.
+- Tests: 363 unit, 390 integration, 91 HTTP, 66 browser; build, format, lint, typecheck and
+  `git diff --check` pass. Development untouched: fingerprint still `9cec751c29cab1faab002a9308e23887`.
+- Git: HEAD and `origin/main` are `77e9a9b` (step 4); the step 5 code, tests and docs are uncommitted.
+- Wave 5 is complete once step 5 is approved and committed.
+- Next: owner review; with approval, commit step 5 (then push on separate approval), then Wave 6 on
+  explicit go-ahead.
+
+## Wave 5 step 4, admin inventory pages (2026-11-12, commit `77e9a9b`, pushed)
 
 - Pages on the admin host: `/warehouses` (list, create, edit, activate/deactivate with confirmation),
   `/inventory` (stock matrix with search, warehouse and low-stock filters, paging; adjust, receive and
@@ -19,8 +38,8 @@ Wave 5 step 5 or any later work without the owner's explicit approval.
 - Tests: 360 unit, 360 integration, 91 HTTP, 66 browser (desktop and 360 px); build, format, lint,
   typecheck and `git diff --check` pass. Development untouched: fingerprint still
   `9cec751c29cab1faab002a9308e23887`.
-- Git: HEAD and `origin/main` are `d9de29f` (step 3); the step 4 code, tests and docs are uncommitted.
-- Next: owner review; with approval, commit step 4 (then push on separate approval).
+- Git: committed as `77e9a9b` ("Wave 5 step 4: build admin inventory UI", parent `d9de29f`) and pushed
+  on 2026-11-12.
 
 ## Wave 5 step 3, admin inventory API (2026-11-11 to 2026-11-12, commit `d9de29f`, pushed)
 
@@ -160,18 +179,19 @@ Wave 5 step 5 or any later work without the owner's explicit approval.
   proxies; `IMPLEMENTATION_PROGRESS.md`, "Wave 2B final check 7").
 - **Wave 5 is in progress:** step 1 (migration foundation) is committed and pushed (`f6c018b`) and applied to
   development; step 2 (inventory services) is complete, committed and pushed (`ef16d46`, `9c1f691`,
-  `0c1e6f2`); step 3 (admin API) is committed and pushed (`d9de29f`); step 4 (admin pages) is done and
-  verified but not committed.
+  `0c1e6f2`); step 3 (admin API) is committed and pushed (`d9de29f`); step 4 (admin pages) is committed
+  and pushed (`77e9a9b`); step 5 (dispatch and restock primitives, close-out) is done and verified but not
+  committed.
 
-## Git state (2026-11-12, Wave 5 step 4, uncommitted)
+## Git state (2026-11-12, Wave 5 step 5, uncommitted)
 
-| Item                      | Value                                                                                                                                                                                                                |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Branch                    | `main`                                                                                                                                                                                                               |
-| HEAD                      | `d9de29f` (Wave 5 step 3), parent `0c1e6f2` (Wave 5 step 2 push record)                                                                                                                                              |
-| Relative to `origin/main` | in sync: `origin/main` is `d9de29f` (pushed 2026-11-12 as a fast-forward `0c1e6f2..d9de29f`)                                                                                                                         |
-| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691`, `0c1e6f2` (5 step 2); `d9de29f` (5 step 3) |
-| Working tree              | Wave 5 step 4 code, tests and docs modified or new; not staged, not committed                                                                                                                                        |
+| Item                      | Value                                                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Branch                    | `main`                                                                                                                                                                                                                                     |
+| HEAD                      | `77e9a9b` (Wave 5 step 4), parent `d9de29f` (Wave 5 step 3)                                                                                                                                                                                |
+| Relative to `origin/main` | in sync: `origin/main` is `77e9a9b`                                                                                                                                                                                                        |
+| On GitHub                 | `fa6ebd6`, `d7e3a0e` (Wave 1); `6863ad2`, `6d60892` (2A); `f2c40ab` (2B); `24563ed`, `8b8ad00`, `800dd41` (3); `e0c3895` (4); `f6c018b` (5 step 1); `ef16d46`, `9c1f691`, `0c1e6f2` (5 step 2); `d9de29f` (5 step 3); `77e9a9b` (5 step 4) |
+| Working tree              | Wave 5 step 5: 19 modified and 7 new files (code, tests, docs); not staged, not committed                                                                                                                                                  |
 
 ### Wave 2B commit contents (historical record, `f2c40ab`)
 
@@ -234,7 +254,7 @@ New files in the commit (106), by folder:
 Check 7 added `tests/http/client-ip.http.test.ts`, `tests/integration/client-ip-trust.test.ts` and the
 `docs/DEPLOYMENT_GUIDE.md` change; `src/lib/client-ip.ts` and its test were already new in Wave 2B.
 
-## Latest passing tests (Wave 5 step 4, 2026-11-12, Node v26.13.0)
+## Latest passing tests (Wave 5 step 5, 2026-11-12, Node v26.13.0)
 
 Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell here starts on v20).
 
@@ -242,20 +262,19 @@ Load Node with `source ~/.nvm/nvm.sh && nvm use 26.13.0` first (a plain shell he
 | ---------------------------------------------------- | -------------------------- |
 | `npm run format:check`, `lint`, `typecheck`, `build` | all exit 0                 |
 | `git diff --check`                                   | clean                      |
-| `npm test`                                           | 360 / 360                  |
-| `npm run test:integration`                           | 360 / 360                  |
+| `npm test`                                           | 363 / 363                  |
+| `npm run test:integration`                           | 390 / 390                  |
 | `npm run test:http` (production build)               | 91 / 91                    |
 | `npm run test:e2e` (production build)                | 66 / 66 (desktop + 360 px) |
 
-`npm run test:http:dev` on `npm run start:test:dev` also passed (91 / 91, 2026-11-12); `npm run test:e2e`
-on `next dev` last ran in the 2026-11-10 regression (40 / 40). One unexplained failure of the existing
-catalogue browser test was seen once in step 4 (journal "Wave 5 step 4").
+`npm run test:http:dev` last passed in step 4 (91 / 91, 2026-11-12); `npm run test:e2e` on `next dev` last
+ran in the 2026-11-10 regression (40 / 40).
 
 ## Databases and services
 
 - **Development database `ecommerce`:** fingerprint `9cec751c29cab1faab002a9308e23887` (47 tables, 1,629
   rows) since the Wave 5 inventory ledger migrations on 2026-11-10; five migrations recorded. Unchanged
-  through Wave 5 step 2 and its full regression (re-checked read-only on 2026-11-11).
+  through Wave 5 steps 2–5 (re-checked read-only on 2026-11-12 before and after the step 5 tests).
   - Before those migrations: `04adce0841b9013d69f13b043ae4a245` (46 tables, 1,627 rows), since the catalogue
     integrity migration on 2026-11-10.
   - Before that migration: `3a6b72f9d53ed06b19f3f136d24b84a6` (unchanged from Wave 2B Step B until then).
@@ -293,24 +312,26 @@ not a database result.
 | 2   | Wave 5 step 2 inventory services                 | complete; N1 fixed; committed and pushed (`ef16d46`, `9c1f691`)  |
 | 3   | Full regression and commit of step 2             | done 2026-11-11 (332 unit, 351 integration, 56 HTTP, 52 browser) |
 | 4   | Wave 5 step 3 (admin inventory API)              | committed and pushed (`d9de29f`)                                 |
-| 5   | Wave 5 step 4 (admin inventory pages)            | done and verified; awaiting owner review; not committed          |
-| 6   | Push to GitHub                                   | `origin/main` is `d9de29f`; step 4 not committed or pushed       |
+| 5   | Wave 5 step 4 (admin inventory pages)            | committed and pushed (`77e9a9b`)                                 |
+| 6   | Wave 5 step 5 (dispatch/restock, close-out)      | done and verified; awaiting owner review; not committed          |
+| 7   | Push to GitHub                                   | `origin/main` is `77e9a9b`; step 5 not committed or pushed       |
 
 Recorded, not implemented (owner decision): L20 per-account sign-in limit (lockout trade-off), L21 session
 not revoked on re-login. Mandatory in Wave 8: L22 order-item composite key, L23 weight and dimension
 snapshot, L31 category and group snapshot decision (before order implementation), L47 reservation caller
 contract (TD-019). Mandatory in Wave 9: L40 real dispatch and cancellation race tests. Before Wave 8: L38
-lock-tracker check. Outstanding limitations: L1–L55 in `docs/REQUIREMENTS_TRACEABILITY.md` (L37, L44, L45, L51 and L53 resolved in Wave 5 step 3).
+lock-tracker check. Outstanding limitations: L1–L60 in `docs/REQUIREMENTS_TRACEABILITY.md` (L37, L44, L45, L51 and L53 resolved in Wave 5 step 3).
 Deployment requirement (not a finished production setting): staging and production keep
 `trustedProxyHopCount` at 0 until the real proxy topology is verified (TD-015, DEPLOYMENT_GUIDE).
 
 ## Exact next steps
 
-1. Check that nothing changed: HEAD and `origin/main` are `d9de29f`; the Wave 5 step 4 files are
+1. Check that nothing changed: HEAD and `origin/main` are `77e9a9b`; the Wave 5 step 5 files are
    uncommitted in the working tree; the development fingerprint is `9cec751c…`; both databases record
-   five migrations; three healthy containers.
-2. Wait for the owner's approval before committing step 4, pushing, or starting any later step. Do not seed development, or reset or truncate any
-   database without explicit approval.
+   five migrations; three healthy containers (restart policy `no`: after a reboot `docker start` the three
+   existing containers, never recreate).
+2. Wait for the owner's approval before committing step 5, pushing, or starting Wave 6. Do not seed
+   development, or reset or truncate any database without explicit approval.
 
 ## Rules still in force
 

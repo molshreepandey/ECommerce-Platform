@@ -107,34 +107,6 @@ async function ledgerReservedByStockRow(): Promise<Map<string, number>> {
   return new Map(rows.map(({ key, reserved }) => [key, reserved]));
 }
 
-// Test-only stand-in for the Wave 9 dispatch, following the same lock order (shipment, then stock row)
-// and the same per-shipment check. It is not production code.
-async function simulateDispatch(
-  shipmentId: string,
-  key: { variantId: string; warehouseId: string },
-  quantity: number,
-): Promise<boolean> {
-  return database.$transaction(async (transaction) => {
-    await transaction.$queryRaw`SELECT id FROM shipments WHERE id = ${shipmentId}::uuid FOR NO KEY UPDATE`;
-    await transaction.$queryRaw`SELECT 1 FROM inventory_levels WHERE variant_id = ${key.variantId}::uuid AND warehouse_id = ${key.warehouseId}::uuid FOR UPDATE`;
-    const [row] = remainingRowsSchema.parse(
-      await transaction.$queryRaw`
-        SELECT coalesce(sum(quantity_delta), 0)::int AS remaining FROM inventory_movements
-        WHERE reference_type = 'shipment' AND reference_id = ${shipmentId}::uuid AND variant_id = ${key.variantId}::uuid
-          AND warehouse_id = ${key.warehouseId}::uuid AND movement_type IN ('RESERVE', 'RELEASE', 'DISPATCH')`,
-    );
-    if ((row?.remaining ?? 0) < quantity) return false;
-    await transaction.$executeRaw`
-      WITH changed AS (
-        UPDATE inventory_levels SET on_hand_quantity = on_hand_quantity - ${quantity}::int, reserved_quantity = reserved_quantity - ${quantity}::int
-        WHERE variant_id = ${key.variantId}::uuid AND warehouse_id = ${key.warehouseId}::uuid
-        RETURNING on_hand_quantity, reserved_quantity)
-      INSERT INTO inventory_movements (variant_id, warehouse_id, movement_type, quantity_delta, on_hand_after, reserved_after, reference_type, reference_id, actor_type)
-      SELECT ${key.variantId}::uuid, ${key.warehouseId}::uuid, 'DISPATCH', ${-quantity}::int, on_hand_quantity, reserved_quantity, 'shipment', ${shipmentId}::uuid, 'SYSTEM' FROM changed`;
-    return true;
-  });
-}
-
 beforeEach(async () => {
   await truncateAllTestTables();
 });
@@ -381,18 +353,6 @@ describe('releasing a reservation', () => {
       details: { remainingReservedQuantity: 0 },
     });
     expect(await stockLevel(key)).toMatchObject({ reservedQuantity: 5 });
-  });
-
-  it('counts dispatched units: only what is still reserved for the shipment can be released', async () => {
-    const { key, customer, shipmentId } = await reservationSetup({ onHandQuantity: 10 });
-    await reserve(customer, [reservationLine(shipmentId, key, 5)]);
-    expect(await simulateDispatch(shipmentId, key, 3)).toBe(true);
-    await expect(release(customer, [reservationLine(shipmentId, key, 3)])).rejects.toMatchObject({
-      code: 'RESERVATION_EXCEEDED',
-      details: { remainingReservedQuantity: 2 },
-    });
-    await release(customer, [reservationLine(shipmentId, key, 2)]);
-    expect(await stockLevel(key)).toMatchObject({ onHandQuantity: 7, reservedQuantity: 0 });
   });
 
   it('allows releases in an inactive warehouse and for archived products or variants', async () => {
@@ -792,32 +752,6 @@ describe('concurrency', () => {
     expect(releases.filter(({ status }) => status === 'rejected')).toEqual([]);
     expect(await stockLevel(key)).toMatchObject({ reservedQuantity: 8 });
     expect(await stockLevel(secondKey)).toMatchObject({ reservedQuantity: 8 });
-  });
-
-  it('lets exactly one of a dispatch and a release take the same reserved units', async () => {
-    for (let round = 0; round < 5; round += 1) {
-      await truncateAllTestTables();
-      const { key, customer, customerId, shipmentId } = await reservationSetup({
-        onHandQuantity: 6,
-      });
-      const bystander = await createShipmentRow({ customerId, warehouseId: key.warehouseId });
-      await reserve(customer, [reservationLine(bystander.id, key, 3)]);
-      await reserve(customer, [reservationLine(shipmentId, key, 2)]);
-      const [dispatched, released] = await Promise.allSettled([
-        simulateDispatch(shipmentId, key, 2),
-        release(customer, [reservationLine(shipmentId, key, 2)]),
-      ]);
-      const dispatchTookThem = dispatched.status === 'fulfilled' && dispatched.value;
-      const releaseTookThem = released.status === 'fulfilled';
-      expect(Number(dispatchTookThem) + Number(releaseTookThem)).toBe(1);
-      if (released.status === 'rejected') {
-        expect(released.reason).toMatchObject({ code: 'RESERVATION_EXCEEDED' });
-      }
-      expect(await stockLevel(key)).toMatchObject({
-        onHandQuantity: dispatchTookThem ? 4 : 6,
-        reservedQuantity: 3,
-      });
-    }
   });
 
   it('keeps the ledger equal to the reserved quantities after a concurrent mix', async () => {

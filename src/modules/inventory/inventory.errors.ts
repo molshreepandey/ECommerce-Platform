@@ -69,6 +69,30 @@ export const inventoryErrors = {
       'The shipment does not exist or belongs to another warehouse.',
       details,
     ),
+  restockExceeded: (details: {
+    referenceType: 'shipment' | 'return_request';
+    referenceId: string;
+    variantId: string;
+    warehouseId: string;
+    restockableQuantity: number;
+    requestedQuantity: number;
+  }) =>
+    inventoryError(
+      'CONFLICT',
+      'RESTOCK_EXCEEDED',
+      'This is more than can still be restocked for this shipment or return.',
+      details,
+    ),
+  restockReferenceInvalid: (details: {
+    returnRequestId: string;
+    reason: 'RETURN_REQUEST_NOT_FOUND' | 'NO_RECEIVING_WAREHOUSE';
+  }) =>
+    inventoryError(
+      'UNPROCESSABLE',
+      'RESTOCK_REFERENCE_INVALID',
+      'The return request does not exist or has no receiving warehouse.',
+      details,
+    ),
   variantNotReservable: (details: {
     variantId: string;
     productStatus: string;

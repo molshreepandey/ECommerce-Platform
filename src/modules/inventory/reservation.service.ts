@@ -11,15 +11,15 @@ import {
 } from './inventory.schema';
 import {
   lockProductsForShare,
-  lockShipments,
   lockVariantsForShare,
   productIdsOfVariants,
 } from './inventory-locks';
 import {
   insertMovements,
   type NewMovement,
-  remainingReservedForShipment,
+  remainingReservedForShipments,
   shipmentReferenceType,
+  shipmentStockKey,
 } from './inventory-movement.repository';
 import {
   lockStockLevels,
@@ -28,7 +28,8 @@ import {
   stockKey,
   type StockLevelRow,
 } from './stock-level.repository';
-import { movementResults, type MovementResult } from './stock-request-result';
+import { lockAndCheckShipments } from './shipment-references';
+import { movementResults, type StockMovementsResult } from './stock-request-result';
 import { isReservable } from './stock-rules';
 import { lockWarehousesForShare } from './warehouse.repository';
 
@@ -53,9 +54,7 @@ import { lockWarehousesForShare } from './warehouse.repository';
 //   movement and one audit row per line, then search updates. The apply order never changes the lock
 //   order above: each lock helper sorts its own keys.
 
-export interface ReservationResult {
-  movements: MovementResult[];
-}
+export type ReservationResult = StockMovementsResult;
 
 interface NormalisedLine {
   kind: 'RESERVE' | 'RELEASE';
@@ -73,35 +72,6 @@ function normalise(kind: NormalisedLine['kind'], line: ReservationLine): Normali
     warehouseId: line.warehouseId.toLowerCase(),
     quantity: line.quantity,
   };
-}
-
-async function checkShipmentReferences(
-  transaction: DatabaseClient,
-  lines: readonly NormalisedLine[],
-): Promise<void> {
-  const shipments = new Map(
-    (
-      await lockShipments(
-        transaction,
-        lines.map(({ shipmentId }) => shipmentId),
-      )
-    ).map((shipment) => [shipment.id, shipment]),
-  );
-  for (const line of lines) {
-    const shipment = shipments.get(line.shipmentId);
-    if (shipment === undefined) {
-      throw inventoryErrors.reservationReferenceInvalid({
-        shipmentId: line.shipmentId,
-        reason: 'SHIPMENT_NOT_FOUND',
-      });
-    }
-    if (shipment.warehouseId !== line.warehouseId) {
-      throw inventoryErrors.reservationReferenceInvalid({
-        shipmentId: line.shipmentId,
-        reason: 'OTHER_WAREHOUSE',
-      });
-    }
-  }
 }
 
 // L2, L3 and L4 for the reserve lines only: a release is allowed whatever the product, variant or
@@ -144,18 +114,6 @@ async function checkReservable(
   if (inactive !== undefined) throw inventoryErrors.warehouseInactive({ warehouseId: inactive.id });
 }
 
-// What each release line may still free, read with every stock row locked, before anything changes.
-async function remainingByReleaseLine(
-  transaction: DatabaseClient,
-  releaseLines: readonly NormalisedLine[],
-): Promise<Map<NormalisedLine, number>> {
-  const remaining = new Map<NormalisedLine, number>();
-  for (const line of releaseLines) {
-    remaining.set(line, await remainingReservedForShipment(transaction, line));
-  }
-  return remaining;
-}
-
 // Order in which lines are applied (the lock helpers sort their own keys, so this never changes the
 // lock order). On one stock row every RELEASE runs before any RESERVE, whatever the shipment IDs, so a
 // re-allocation can reserve the units it frees; within each kind, lines are sorted by shipment.
@@ -182,19 +140,20 @@ export async function applyReservationChanges(
   const reserveLines = lines.filter(({ kind }) => kind === 'RESERVE');
   const releaseLines = lines.filter(({ kind }) => kind === 'RELEASE');
 
-  await checkShipmentReferences(transaction, lines);
+  await lockAndCheckShipments(transaction, lines);
   await checkReservable(transaction, reserveLines);
   const levels = new Map<string, StockLevelRow>(
     (await lockStockLevels(transaction, lines)).map((level) => [stockKey(level), level]),
   );
-  const remaining = await remainingByReleaseLine(transaction, releaseLines);
+  // What each release line may still free, read with every stock row locked, before anything changes.
+  const remaining = await remainingReservedForShipments(transaction, releaseLines);
 
   const movements: NewMovement[] = [];
   const audits: { line: NormalisedLine; before: StockLevelRow; after: StockLevelRow }[] = [];
   for (const line of lines) {
     const key = stockKey(line);
     const before = levels.get(key);
-    const after = await applyLine(transaction, line, before, remaining.get(line));
+    const after = await applyLine(transaction, line, before, remaining.get(shipmentStockKey(line)));
     if (before === undefined) throw new Error('A changed stock row was not locked');
     levels.set(key, after);
     audits.push({ line, before, after });

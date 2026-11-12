@@ -14,7 +14,8 @@ import {
   listMovementPage,
   movementsForChangeRequest,
   type NewMovement,
-  remainingReservedForShipment,
+  remainingReservedForShipments,
+  shipmentStockKey,
 } from '@/modules/inventory/inventory-movement.repository';
 import {
   lockProductsForShare,
@@ -473,12 +474,13 @@ describe('movement and change-request repositories', () => {
         }),
       ]),
     );
-    const remaining = await remainingReservedForShipment(database, {
+    const key = {
       shipmentId: at.shipment.id,
       variantId: at.variantId,
       warehouseId: at.location.warehouseId,
-    });
-    expect(remaining).toBe(2);
+    };
+    const remaining = await remainingReservedForShipments(database, [key]);
+    expect(remaining).toEqual(new Map([[shipmentStockKey(key), 2]]));
   });
 
   it('pages the ledger newest first with no row skipped or repeated, even with identical timestamps', async () => {

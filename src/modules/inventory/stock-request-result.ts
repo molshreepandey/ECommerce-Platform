@@ -30,6 +30,10 @@ export interface MovementResult {
   recordedAt: Date;
 }
 
+export interface StockMovementsResult {
+  movements: MovementResult[];
+}
+
 export interface StockRequestResult {
   changeRequestId: string;
   operation: StockRequestOperation;

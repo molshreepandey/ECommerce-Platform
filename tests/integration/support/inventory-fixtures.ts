@@ -5,6 +5,7 @@ import { getDatabase } from '@/lib/db';
 import {
   type CustomerId,
   customerIdSchema,
+  returnRequestIdSchema,
   shipmentIdSchema,
   staffUserIdSchema,
   variantIdSchema,
@@ -163,6 +164,67 @@ export async function createShipmentRow(input: { customerId: string; warehouseId
     data: { orderId: order.id, warehouseId: input.warehouseId },
     select: { id: true, orderId: true, warehouseId: true },
   });
+}
+
+// A return request on a new order for the given variants (amounts are placeholders; returns are Wave 12).
+// receivingWarehouseId null means the return has not been assigned a warehouse yet.
+export async function createReturnRequestRow(input: {
+  customerId: string;
+  receivingWarehouseId: string | null;
+  items: readonly { variantId: string; productId: string; quantity: number }[];
+}) {
+  const suffix = uniqueSuffix();
+  const order = await database.order.create({
+    data: {
+      orderNumber: `ORD-R-${suffix.toUpperCase()}`,
+      customerId: input.customerId,
+      idempotencyKey: `test-return-order-${suffix}`,
+      requestFingerprint: 'e'.repeat(64),
+      subtotalPaise: 79_900,
+      taxPaise: 3_805,
+      totalPaise: 79_900,
+      shippingAddress: { city: 'Bengaluru', pincode: '560001' },
+    },
+    select: { id: true },
+  });
+  const returnRequest = await database.returnRequest.create({
+    data: {
+      returnNumber: `RET-T-${suffix.toUpperCase()}`,
+      orderId: order.id,
+      customerId: input.customerId,
+      requestType: 'RETURN',
+      reason: 'Size does not fit',
+      receivingWarehouseId: input.receivingWarehouseId,
+    },
+    select: { id: true },
+  });
+  for (const item of input.items) {
+    const orderItem = await database.orderItem.create({
+      data: {
+        orderId: order.id,
+        variantId: item.variantId,
+        productId: item.productId,
+        productName: 'Kurta',
+        brandName: 'Brand',
+        sku: `SKU-${uniqueSuffix()}`,
+        quantity: item.quantity,
+        mrpPaise: 99_900,
+        unitPricePaise: 79_900,
+        taxRateBasisPoints: 500,
+        taxPaise: 3_805,
+        lineTotalPaise: 79_900 * item.quantity,
+      },
+      select: { id: true },
+    });
+    await database.returnRequestItem.create({
+      data: {
+        returnRequestId: returnRequest.id,
+        orderItemId: orderItem.id,
+        quantity: item.quantity,
+      },
+    });
+  }
+  return { returnRequestId: returnRequestIdSchema.parse(returnRequest.id), orderId: order.id };
 }
 
 // One variant stocked in one warehouse, plus an inventory manager with real staff and audit identity.

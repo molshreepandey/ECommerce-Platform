@@ -580,7 +580,8 @@ transaction back.
   can always be freed. Concurrent releases queue on the stock-row lock and the second recomputes.
 - Deactivating a warehouse, or archiving a product or variant, never releases or changes a reservation.
 - Only these services write reservation movements (`insertMovements` is called only by the adjustment,
-  receipt and reservation services); the seed writes its own historical movements (L49).
+  receipt and reservation services, and since Wave 5 step 5 by the dispatch and restock services through
+  `line-movements.ts`, TD-022); the seed writes its own historical movements (L49).
 
 ### Stock rules
 
@@ -756,3 +757,70 @@ signed-in staff member, and client components that change data only through the 
 - **Navigation.** Four entries (Inventory, Low stock, Stock movements, Warehouses). The sidebar highlights
   only the most specific matching entry, so "Inventory" is not also active on its sub-pages.
 - Deferred: L56–L58 in `docs/REQUIREMENTS_TRACEABILITY.md`.
+
+## TD-022 Dispatch and restock primitives (Wave 5, step 5)
+
+Code: `src/modules/inventory/stock-dispatch.service.ts`, `stock-restock.service.ts`, with
+`shipment-references.ts` (the shipment check, moved out of the reservation service unchanged) and
+`line-movements.ts` (one movement and one audit row per line). Plan section 12 lists
+`dispatchReservedStock` and `restockReturnedQuantity` for Wave 5; TD-019 item 6 had left them for Wave 9.
+The owner chose on 2026-11-12 to build them now, before closing Wave 5. No schema change, no migration, no
+HTTP route.
+
+- **Internal, under the reservation caller contract (TD-019).** They run inside the caller's
+  transaction; the caller may hold order (L0a) and shipment (L0b) locks and no other inventory lock, takes
+  no new L0–L5 lock afterwards, authorises the action and decides whether the shipment or return status
+  allows it (L47 applies to them too). Any failure rolls the caller's whole transaction back.
+- **`dispatchReservedStock`** (Wave 9, shipment handed to the courier): L0b shipments → L5 stock rows →
+  inserts. Per line: the shipment must exist and be in the line's warehouse (422
+  `RESERVATION_REFERENCE_INVALID`), the quantity must not exceed what is still reserved for that exact
+  shipment, variant and warehouse (the same ledger sum the release uses: RESERVE − RELEASE − DISPATCH;
+  409 `RESERVATION_EXCEEDED` otherwise), then `on_hand −= q, reserved −= q WHERE reserved >= q` and one
+  `DISPATCH` movement (delta −q, reference the shipment). Available stock does not change, so no search
+  update is queued. Allowed for archived products and variants and inactive warehouses: the units are
+  already reserved and must be able to leave.
+- **Plan's `restockReturnedQuantity` is two functions** (rule 19: no flag that switches behaviour),
+  because the two sources differ in reference, warehouse and limit:
+  - **`restockReturnedShipment`** (RTO received, D36, Wave 9): L0b → L5 → inserts. Back to the shipment's
+    own warehouse only (422 `RESERVATION_REFERENCE_INVALID` for another one); at most what the shipment
+    dispatched minus what it already restocked for that variant and warehouse (409 `RESTOCK_EXCEEDED`);
+    one `RTO_RESTOCK` movement, reference the shipment (the seed's existing convention).
+  - **`restockCustomerReturn`** (customer return received, D43, Wave 12): the warehouse is the return
+    request's `receiving_warehouse_id`, never passed by the caller (422 `RESTOCK_REFERENCE_INVALID` when
+    the request does not exist or has none). The stock row is created if missing (L5 insert, as receipts
+    do). Limit: the quantity the request's items list for that variant (through `order_items.variant_id`)
+    minus what was already restocked for that request and variant in any warehouse (409
+    `RESTOCK_EXCEEDED`). One `RETURN_RESTOCK` movement, reference type `return_request`.
+  - Both put physical units back, so they are allowed for archived products and variants and inactive
+    warehouses, keep the 1,000,000 on-hand ceiling (422 `ON_HAND_LIMIT_EXCEEDED`, as add and receipt), and
+    queue a search update. A duplicate restock is refused, never applied twice.
+- **No return-request lock.** The hierarchy has no level for `return_requests` (nothing locks them yet),
+  and this step does not add one. Concurrent restocks of the same request and variant serialise on the
+  receiving stock row (L5), and the limit is recomputed under that lock. The remaining race (the receiving
+  warehouse changed while two restocks run) is the returns code's to prevent by holding its return request
+  (L60): Wave 12 decides that lock's level.
+- **Audit actions:** `inventory.stock_dispatched`, `inventory.shipment_restocked`,
+  `inventory.return_restocked` (entity `inventory_movement`, before and after quantities, the shipment or
+  return request id).
+- **One inventory call per transaction.** The lock tracker never goes back up the hierarchy, even for
+  rows already held, so a second inventory call in the same transaction (dispatch then release, or one
+  dispatch per shipment) re-takes L0b after L5 and fails with `LockOrderViolation`. Callers batch every
+  shipment's lines into one call. Wave 9 must handle an RTO of a partly dispatched shipment (restock the
+  dispatched units and release the rest) with separate transactions or a combined primitive.
+- **Every line is checked before the first change.** Limits are read in one grouped query per call
+  (`remainingReservedForShipments`, `restockableForShipments`, `restockableForReturnRequests`, plan rule
+  3; the release path uses the same grouped query since this step), with the stock rows already locked.
+  The on-hand ceiling adds up lines that share a stock row. So a refused call changes no stock row even if
+  a caller wrongly catches the error and commits; callers must still never swallow an inventory error
+  inside their transaction (the reserve/release path applies line by line, TD-019).
+- **Customer return: refused before a stock row is created.** The limit is checked once before the missing
+  stock row is inserted (a variant the return does not list, or one that does not exist, is 409
+  `RESTOCK_EXCEEDED`, never a foreign-key error) and again under the row lock.
+- **Error code reuse:** a dispatch or RTO line naming another warehouse's shipment answers
+  `RESERVATION_REFERENCE_INVALID` (the existing shipment check, unchanged), although it is not a
+  reservation; internal callers branch on the reason (`SHIPMENT_NOT_FOUND`, `OTHER_WAREHOUSE`).
+- **Input:** up to 100 lines, ids lower-cased (they are matched against ids read back from the
+  database), each shipment/variant/warehouse or return/variant once, quantity 1–100,000.
+- The test-only simulated dispatch in `stock-reservations.test.ts` is gone: release-versus-dispatch and
+  "release only what is not dispatched" now run against `dispatchReservedStock`
+  (`stock-dispatch-restock.test.ts`). Races with real shipment status changes remain Wave 9 work (L40).

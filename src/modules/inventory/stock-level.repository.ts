@@ -187,6 +187,25 @@ export async function releaseQuantity(
   );
 }
 
+// Reserved units leave the warehouse: on hand and reserved fall together, so available is unchanged.
+export async function dispatchQuantity(
+  transaction: DatabaseClient,
+  key: StockKey,
+  quantity: number,
+): Promise<StockLevelRow | null> {
+  assertLocked(transaction, 'STOCK_LEVELS', stockKey(key));
+  return parseOptionalStockLevel(
+    await transaction.$queryRaw`
+      UPDATE inventory_levels SET on_hand_quantity = on_hand_quantity - ${quantity}::int,
+                                  reserved_quantity = reserved_quantity - ${quantity}::int,
+                                  updated_at = now()
+      WHERE variant_id = ${key.variantId}::uuid AND warehouse_id = ${key.warehouseId}::uuid
+        AND reserved_quantity >= ${quantity}::int
+      RETURNING variant_id::text AS variant_id, warehouse_id::text AS warehouse_id, on_hand_quantity,
+                reserved_quantity, available_quantity, low_stock_threshold`,
+  );
+}
+
 // Changes only the threshold: on hand and reserved are never touched.
 export async function setLowStockThresholdValue(
   transaction: DatabaseClient,

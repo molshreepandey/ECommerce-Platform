@@ -1,6 +1,11 @@
 import { z } from 'zod';
 
-import { shipmentIdSchema, variantIdSchema, warehouseIdSchema } from '@/lib/ids';
+import {
+  returnRequestIdSchema,
+  shipmentIdSchema,
+  variantIdSchema,
+  warehouseIdSchema,
+} from '@/lib/ids';
 import { indianMobileSchema, indianPincodeSchema } from '@/modules/identity/identity.schema';
 
 export const maximumStockQuantity = 100_000;
@@ -182,6 +187,56 @@ export const reservationChangesSchema = z
 export type ReservationChanges = z.infer<typeof reservationChangesSchema>;
 // What callers pass: either list may be left out.
 export type ReservationChangesInput = z.input<typeof reservationChangesSchema>;
+
+// Dispatch and restock lines are matched against ids read back from the database (shipment warehouses,
+// ledger sums), so their ids are lower-cased first, as for receipts and thresholds.
+const lowerCaseShipmentIdSchema = z
+  .string()
+  .transform((value) => value.toLowerCase())
+  .pipe(shipmentIdSchema);
+const lowerCaseReturnRequestIdSchema = z
+  .string()
+  .transform((value) => value.toLowerCase())
+  .pipe(returnRequestIdSchema);
+
+const shipmentStockLineSchema = z.strictObject({
+  shipmentId: lowerCaseShipmentIdSchema,
+  variantId: lowerCaseVariantIdSchema,
+  warehouseId: lowerCaseWarehouseIdSchema,
+  quantity: stockQuantitySchema,
+});
+
+export const shipmentStockLinesSchema = z
+  .array(shipmentStockLineSchema)
+  .min(1, 'Add at least one line')
+  .max(maximumLinesPerRequest)
+  .refine(
+    (lines) =>
+      new Set(lines.map((line) => `${line.shipmentId}/${line.variantId}/${line.warehouseId}`))
+        .size === lines.length,
+    { message: 'Each shipment, variant and warehouse once' },
+  );
+export type ShipmentStockLine = z.infer<typeof shipmentStockLineSchema>;
+export type ShipmentStockLineInput = z.input<typeof shipmentStockLineSchema>;
+
+const customerReturnLineSchema = z.strictObject({
+  returnRequestId: lowerCaseReturnRequestIdSchema,
+  variantId: lowerCaseVariantIdSchema,
+  quantity: stockQuantitySchema,
+});
+
+export const customerReturnLinesSchema = z
+  .array(customerReturnLineSchema)
+  .min(1, 'Add at least one line')
+  .max(maximumLinesPerRequest)
+  .refine(
+    (lines) =>
+      new Set(lines.map((line) => `${line.returnRequestId}/${line.variantId}`)).size ===
+      lines.length,
+    { message: 'Each return request and variant once' },
+  );
+export type CustomerReturnLine = z.infer<typeof customerReturnLineSchema>;
+export type CustomerReturnLineInput = z.input<typeof customerReturnLineSchema>;
 
 const queryFlag = z.enum(['true', 'false']).transform((value) => value === 'true');
 const queryTimestamp = z.iso.datetime({ offset: true }).transform((value) => new Date(value));

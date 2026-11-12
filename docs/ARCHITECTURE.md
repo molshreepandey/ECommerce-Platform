@@ -2,7 +2,8 @@
 
 Status: Waves 1–4 are built (foundation, platform, identity and audit, catalogue, categories, tagging and
 product groups). Wave 5 is in progress: the inventory ledger migrations, the inventory services and the
-admin inventory API (step 3, TD-020) and the admin inventory pages (step 4, TD-021) are in place. Business modules
+admin inventory API (step 3, TD-020), the admin inventory pages (step 4, TD-021) and the internal dispatch and
+restock functions (step 5, TD-022) are in place. Business modules
 live in `src/modules/<name>/` as `*.service.ts` (transactions, rules) over `*.repository.ts` (Prisma
 only); route handlers in `src/app/api/` stay thin.
 
@@ -30,9 +31,9 @@ flowchart LR
 - **Layering inside a module** (from Wave 2B): route handler → service → repository. Route handlers only
   authenticate, validate and call one service. Business rules live in services; SQL lives in repositories.
 
-- **Inventory (`src/modules/inventory/`, TD-018, TD-019).** Warehouses, staff stock changes (idempotent
-  adjustments and receipts), low-stock thresholds, internal reservation and release functions for checkout
-  and order code, and read-only queries (stock matrix, low stock, ledger, availability). Every stock change
+- **Inventory (`src/modules/inventory/`, TD-018, TD-019, TD-022).** Warehouses, staff stock changes
+  (idempotent adjustments and receipts), low-stock thresholds, internal reservation, release, dispatch and
+  restock functions for checkout, shipment and returns code, and read-only queries (stock matrix, low stock, ledger, availability). Every stock change
   runs in one transaction that also writes its ledger movement, audit row and search update; row locks
   follow one global hierarchy (orders, shipments, change requests, products, variants, warehouses, stock
   rows), checked at runtime by a per-transaction lock-order tracker.

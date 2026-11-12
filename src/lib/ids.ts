@@ -14,6 +14,7 @@ export const warehouseIdSchema = z.uuid().brand<'WarehouseId'>();
 export const orderIdSchema = z.uuid().brand<'OrderId'>();
 export const shipmentIdSchema = z.uuid().brand<'ShipmentId'>();
 export const courierPartnerIdSchema = z.uuid().brand<'CourierPartnerId'>();
+export const returnRequestIdSchema = z.uuid().brand<'ReturnRequestId'>();
 
 export type CustomerId = z.infer<typeof customerIdSchema>;
 export type StaffUserId = z.infer<typeof staffUserIdSchema>;
@@ -29,3 +30,4 @@ export type WarehouseId = z.infer<typeof warehouseIdSchema>;
 export type OrderId = z.infer<typeof orderIdSchema>;
 export type ShipmentId = z.infer<typeof shipmentIdSchema>;
 export type CourierPartnerId = z.infer<typeof courierPartnerIdSchema>;
+export type ReturnRequestId = z.infer<typeof returnRequestIdSchema>;

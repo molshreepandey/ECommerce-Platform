@@ -28,6 +28,7 @@ export type MovementView = Readonly<{
 const referenceLabels: Readonly<Record<string, string>> = {
   inventory_change_request: 'Staff stock change',
   shipment: 'Shipment',
+  return_request: 'Return request',
 };
 
 function deltaTone(quantityDelta: number): BadgeTone {

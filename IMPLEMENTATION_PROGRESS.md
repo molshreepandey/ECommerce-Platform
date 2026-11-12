@@ -4,7 +4,7 @@ Spec: `~/Downloads/ECOMMERCE_PLATFORM_PLAN.md` (read-only). Waves follow plan se
 
 ## Waves
 
-Current status (updated 2026-11-10). The dated headings of the journal entries below record the status when
+Current status (updated 2026-11-12). The dated headings of the journal entries below record the status when
 each entry was written; this list is the current status.
 
 - [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6`, push record `d7e3a0e`; on GitHub (private))
@@ -17,8 +17,9 @@ each entry was written; this list is the current status.
       inventory services: **complete**; commit `ef16d46` plus documentation follow-up `9c1f691`, both pushed to
       GitHub on 2026-11-11, after the N1 fix and a full regression (332 unit, 351 integration, 56 HTTP, 52
       browser). Step 3, the admin inventory API: commit `d9de29f`, pushed on 2026-11-12. Step 4, the admin
-      inventory pages: done and verified (360 unit, 360 integration, 91 HTTP, 66 browser), **not committed**,
-      awaiting owner review.
+      inventory pages: commit `77e9a9b`, pushed on 2026-11-12. Step 5, dispatch and restock primitives and
+      Wave 5 close-out: done and verified (363 unit, 390 integration, 91 HTTP, 66 browser), **not
+      committed**, awaiting owner review.
 - [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
@@ -2438,3 +2439,89 @@ Results (Node v26.13.0): `npm test` 360 / 360; `npm run test:integration` 360 / 
 `npm run test:http` 91 / 91; `npm run test:e2e` 66 / 66 twice in a row; `npm run test:http:dev` 91 / 91;
 format, lint, typecheck and `git diff --check` exit 0. Development fingerprint
 `9cec751c29cab1faab002a9308e23887` before and after.
+
+## Wave 5 step 5: dispatch and restock primitives, Wave 5 close-out (2026-11-12, done; awaiting owner review, not committed)
+
+Starting point: HEAD and `origin/main` at `77e9a9b` (step 4), clean tree. No step 5 was recorded anywhere, and
+`docs/SESSION_HANDOFF.md` still called step 4 uncommitted. A comparison of plan section 12 (Wave 5) with
+the code found two gaps: the inventory functions `dispatchReservedStock` and `restockReturnedQuantity` did
+not exist (TD-019 item 6 and L40 had left them for Wave 9), and D24's "pickup registration with courier"
+had no schema or tracking entry. The owner chose to build the two functions now and then close Wave 5
+(2026-11-12). Decisions: TD-022. No schema change, no migration, no HTTP route, no development write.
+
+### What was built
+
+| Function                                  | Caller (wave) | Effect                                                                                                                        | Refused with                                                                                                                         |
+| ----------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `dispatchReservedStock`                   | shipments (9) | on hand and reserved −q, `DISPATCH` movement (reference the shipment), audit `inventory.stock_dispatched`, no search update   | 409 `RESERVATION_EXCEEDED` above what the shipment still has reserved; 422 `RESERVATION_REFERENCE_INVALID` for a wrong shipment      |
+| `restockReturnedShipment` (RTO received)  | shipments (9) | on hand +q at the shipment's own warehouse, `RTO_RESTOCK`, audit `inventory.shipment_restocked`, search update                | 409 `RESTOCK_EXCEEDED` above dispatched − already restocked; 422 for another warehouse; 422 `ON_HAND_LIMIT_EXCEEDED` above 1,000,000 |
+| `restockCustomerReturn` (customer return) | returns (12)  | on hand +q at the return's receiving warehouse (row created if missing), `RETURN_RESTOCK`, audit `inventory.return_restocked` | 409 `RESTOCK_EXCEEDED` above the return's listed quantity − already restocked; 422 `RESTOCK_REFERENCE_INVALID`; ceiling as above     |
+
+The plan's single `restockReturnedQuantity` became the last two (plan rule 19: no flag that switches
+behaviour; the sources differ in reference, warehouse and limit). New files: `stock-dispatch.service.ts`,
+`stock-restock.service.ts`, `line-movements.ts` (typed movement kinds: one movement and one audit row per
+line), `shipment-references.ts` (the shipment check, moved out of `reservation.service.ts`),
+`return-request-reference.repository.ts`. Changed: grouped ledger-limit queries in
+`inventory-movement.repository.ts` (`remainingReservedForShipments`, `restockableForShipments`,
+`restockableForReturnRequests`; the release path now uses the grouped query too), `dispatchQuantity` in
+`stock-level.repository.ts`, line schemas and errors, `ReturnRequestId`, three audit actions, the ledger
+label "Return request". The test-only simulated dispatch in `stock-reservations.test.ts` was removed; its
+two tests now run against `dispatchReservedStock` in the new `stock-dispatch-restock.test.ts`.
+
+Close-out: plan Wave 5 "Done when" checked against the code (stock per warehouse visible; every change in
+the ledger with before → after) and every listed test mapped to an existing one (below-zero adjustment 409:
+`stock-adjustments.test.ts` and `database-constraints.test.ts`; reserved > on hand impossible:
+`database-constraints.test.ts`; concurrent adjustments: 20 parallel removals; deactivated warehouse excluded
+from availability: `inventory-queries.test.ts`, `catalogue-products.test.ts`; ledger row per change: every
+stock service test). New: `docs/walkthroughs/wave-5.md`; TD-022; L59 (D24 courier pickup, Wave 9) and L60
+(no return-request lock, Wave 12); L40 and L41 reworded; traceability R11, R13, T5, T8, X2 and A4 updated.
+
+### Infrastructure
+
+The containers were stopped (OrbStack down). After the owner started OrbStack, `docker ps -a` still showed all
+three `Exited` 11 hours earlier and nothing listened on 5433, so the three existing containers were started
+with `docker start` (not recreated) at about 08:32 UTC; all three healthy.
+
+### Tests (Node v26.13.0, guarded `ecommerce_test` and `ecom:test:` only)
+
+| Suite                      | Before step 5 | After step 5 (2026-11-12)                                                                             |
+| -------------------------- | ------------- | ----------------------------------------------------------------------------------------------------- |
+| `npm test`                 | 360           | **363 / 363** (+3 line-schema tests)                                                                  |
+| `npm run test:integration` | 360           | **390 / 390** (+32 in `stock-dispatch-restock.test.ts`, −2 moved out of `stock-reservations.test.ts`) |
+| `npm run test:http`        | 91            | **91 / 91** (production build)                                                                        |
+| `npm run test:e2e`         | 66            | **66 / 66** (production build, desktop and 360 px)                                                    |
+
+First full run before the review: 363 unit, 383 integration, 91 HTTP, 66 browser. `npm run build`, `format:check`,
+`lint`, `typecheck` and `git diff --check` exit 0 before and after the review fixes.
+
+Mutation checks (each file restored byte for byte, checked with `cmp`): without the per-shipment dispatch
+check 3 tests fail; without the restock limit 4; without the dispatch's shipment lock 3; with limits
+checked during the updates instead of before them 4; without adding up lines on one stock row for the
+ceiling 1; without the customer-return check before the stock row is created 1. (The first attempt at the
+ceiling mutation did not apply because Prettier had wrapped the line; it was redone and failed as expected.)
+
+### Review (one independent read-only review) and fixes (one round)
+
+Verdict READY FOR OWNER REVIEW: no high or medium findings; eight low and three informational. All but
+one were fixed in one round; the reused error code was documented instead.
+
+| Finding                                                                                                                                 | Fix                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TD-019 still said only adjustment, receipt and reservation services write movements                                                     | TD-019 names the dispatch and restock services                                                                                                                                                                                         |
+| A second inventory call in one transaction fails with `LockOrderViolation` (the tracker never goes back up)                             | written into TD-022: one inventory call per transaction, with Wave 9's partly-dispatched RTO case noted                                                                                                                                |
+| A customer-return restock of a variant that does not exist hit a foreign-key error (500) when creating the stock row                    | the limit is checked once before the row is created (409 `RESTOCK_EXCEEDED`) and again under the lock; test added                                                                                                                      |
+| Lines were checked while updating, so a caller that caught the refusal and committed would keep earlier lines' stock changes unledgered | every line (limit and ceiling, added up per stock row) is checked before the first update; two tests where the caller catches and commits: nothing changes                                                                             |
+| Ledger limits ran one query per line (plan rule 3)                                                                                      | one grouped query per call, also for releases; the grouped query's −0 for "nothing dispatched" was caught by a test and fixed                                                                                                          |
+| Concurrency tests: the mixed run checked no outcomes; the return-restock run did not check refusal codes                                | outcomes, refusal codes and per-shipment limits (remaining reserved ≥ 0, restockable ≥ 0) asserted                                                                                                                                     |
+| Missing cases                                                                                                                           | added: limit across a changed receiving warehouse, return restock into an inactive warehouse and for an archived product, upper-case ids for both restocks, two shipments in one dispatch on one stock row (audit before-values chain) |
+| Movement type, reference type, audit field and action were independent arguments                                                        | one typed map per movement kind (`line-movements.ts`)                                                                                                                                                                                  |
+| L60 named only the receiving warehouse                                                                                                  | also the return's item quantities, and the RTO-plus-return double restock that return eligibility must prevent                                                                                                                         |
+| `RESERVATION_REFERENCE_INVALID` reused for dispatch and RTO                                                                             | kept (internal callers branch on the reason); documented in TD-022                                                                                                                                                                     |
+| Walkthrough said every restock is checked against a shipment                                                                            | corrected                                                                                                                                                                                                                              |
+| Header comments longer than one line                                                                                                    | shortened to three lines each (same precedent as `reservation.service.ts`)                                                                                                                                                             |
+
+### Databases
+
+Development fingerprint `9cec751c29cab1faab002a9308e23887` at 08:33 UTC (before any test) and at 08:50 UTC
+(after everything); development and test each record five migrations; 0 non-test Redis keys. Test servers
+stopped; ports 3000, 3100 and 3200 free.

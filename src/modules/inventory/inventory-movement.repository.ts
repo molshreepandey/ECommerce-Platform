@@ -6,6 +6,7 @@ import type { DatabaseClient } from '@/lib/db';
 
 export const changeRequestReferenceType = 'inventory_change_request';
 export const shipmentReferenceType = 'shipment';
+export const returnRequestReferenceType = 'return_request';
 
 export interface NewMovement {
   variantId: string;
@@ -73,23 +74,100 @@ export async function insertMovements(
   );
 }
 
-const remainingRowsSchema = z.tuple([z.object({ remaining: z.number() })]);
+export interface ShipmentStockKey {
+  shipmentId: string;
+  variantId: string;
+  warehouseId: string;
+}
 
-// What is still reserved for one exact shipment, variant and warehouse: reservations add, releases and
-// dispatches subtract. Call it with the stock row already locked, so no other change can interleave.
-export async function remainingReservedForShipment(
+// Lower-case, so it matches the ids PostgreSQL returns as text.
+export function shipmentStockKey(key: ShipmentStockKey): string {
+  return `${key.shipmentId}/${key.variantId}/${key.warehouseId}`.toLowerCase();
+}
+
+export interface ReturnStockKey {
+  returnRequestId: string;
+  variantId: string;
+}
+
+export function returnStockKey(key: ReturnStockKey): string {
+  return `${key.returnRequestId}/${key.variantId}`.toLowerCase();
+}
+
+const keyedQuantityRowsSchema = z.array(z.object({ key: z.string(), quantity: z.number() }));
+
+function keyedQuantities(rows: unknown): Map<string, number> {
+  return new Map(keyedQuantityRowsSchema.parse(rows).map(({ key, quantity }) => [key, quantity]));
+}
+
+// One statement for every key: the sum of the given movement types' deltas per exact shipment, variant
+// and warehouse (0 when there is none). Call it with the stock rows already locked.
+async function sumShipmentMovements(
   transaction: DatabaseClient,
-  key: { shipmentId: string; variantId: string; warehouseId: string },
-): Promise<number> {
-  const [row] = remainingRowsSchema.parse(
+  keys: readonly ShipmentStockKey[],
+  movementTypes: readonly InventoryMovementType[],
+): Promise<Map<string, number>> {
+  if (keys.length === 0) return new Map();
+  return keyedQuantities(
     await transaction.$queryRaw`
-      SELECT coalesce(sum(quantity_delta), 0)::int AS remaining
-      FROM inventory_movements
-      WHERE reference_type = ${shipmentReferenceType} AND reference_id = ${key.shipmentId}::uuid
-        AND variant_id = ${key.variantId}::uuid AND warehouse_id = ${key.warehouseId}::uuid
-        AND movement_type IN ('RESERVE', 'RELEASE', 'DISPATCH')`,
+      SELECT key.shipment_id::text || '/' || key.variant_id::text || '/' || key.warehouse_id::text AS key,
+             coalesce(sum(movement.quantity_delta), 0)::int AS quantity
+      FROM unnest(${keys.map(({ shipmentId }) => shipmentId)}::uuid[],
+                  ${keys.map(({ variantId }) => variantId)}::uuid[],
+                  ${keys.map(({ warehouseId }) => warehouseId)}::uuid[])
+           AS key(shipment_id, variant_id, warehouse_id)
+      LEFT JOIN inventory_movements AS movement
+        ON movement.reference_type = ${shipmentReferenceType}
+       AND movement.reference_id = key.shipment_id
+       AND movement.variant_id = key.variant_id AND movement.warehouse_id = key.warehouse_id
+       AND movement.movement_type::text = ANY(${[...movementTypes]}::text[])
+      GROUP BY key.shipment_id, key.variant_id, key.warehouse_id`,
   );
-  return row.remaining;
+}
+
+// What is still reserved for each exact shipment, variant and warehouse: reservations add, releases and
+// dispatches subtract. Keyed by shipmentStockKey().
+export function remainingReservedForShipments(
+  transaction: DatabaseClient,
+  keys: readonly ShipmentStockKey[],
+): Promise<Map<string, number>> {
+  return sumShipmentMovements(transaction, keys, ['RESERVE', 'RELEASE', 'DISPATCH']);
+}
+
+// What a shipment returned to origin may still put back: units dispatched minus units already restocked,
+// per exact shipment, variant and warehouse. Keyed by shipmentStockKey().
+export async function restockableForShipments(
+  transaction: DatabaseClient,
+  keys: readonly ShipmentStockKey[],
+): Promise<Map<string, number>> {
+  const sums = await sumShipmentMovements(transaction, keys, ['DISPATCH', 'RTO_RESTOCK']);
+  return new Map([...sums].map(([key, sum]) => [key, 0 - sum]));
+}
+
+// What a customer return may still put back per variant: the quantity its items list minus what was
+// already restocked for it, in any warehouse. Keyed by returnStockKey().
+export async function restockableForReturnRequests(
+  transaction: DatabaseClient,
+  keys: readonly ReturnStockKey[],
+): Promise<Map<string, number>> {
+  if (keys.length === 0) return new Map();
+  return keyedQuantities(
+    await transaction.$queryRaw`
+      SELECT key.return_request_id::text || '/' || key.variant_id::text AS key,
+             ((SELECT coalesce(sum(item.quantity), 0)
+               FROM return_request_items AS item
+               JOIN order_items AS ordered ON ordered.id = item.order_item_id
+               WHERE item.return_request_id = key.return_request_id
+                 AND ordered.variant_id = key.variant_id)
+            - (SELECT coalesce(sum(movement.quantity_delta), 0)
+               FROM inventory_movements AS movement
+               WHERE movement.reference_type = ${returnRequestReferenceType}
+                 AND movement.reference_id = key.return_request_id
+                 AND movement.variant_id = key.variant_id
+                 AND movement.movement_type = 'RETURN_RESTOCK'))::int AS quantity
+      FROM unnest(${keys.map(({ returnRequestId }) => returnRequestId)}::uuid[],
+                  ${keys.map(({ variantId }) => variantId)}::uuid[]) AS key(return_request_id, variant_id)`,
+  );
 }
 
 // The movements one staff stock request wrote, for an exact replay of its original result.
