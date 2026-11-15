@@ -32,7 +32,7 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
         {product.inStock ? (
           discount >= 30 ? (
-            <span className="absolute top-sm left-sm rounded-pill bg-headings/85 px-sm py-xs text-body4-medium text-white">
+            <span className="absolute top-sm left-sm bg-primary px-sm py-xs text-body4-medium tracking-wider text-white uppercase">
               Top deal
             </span>
           ) : null

@@ -100,6 +100,10 @@ test('categories page: departments, groups and subcategories all lead to their p
     const response = await page.request.get(`${storeOrigin}${href}`);
     expect(response.status(), href).toBe(200);
   }
+  // Banner links saved by early demo data use /c/<slug>; they lead to the category page.
+  const shortLink = await page.request.get(`${storeOrigin}/c/smartphones`, { maxRedirects: 0 });
+  expect(shortLink.status()).toBe(308);
+  expect(shortLink.headers()['location']).toMatch(/\/categories\/smartphones$/);
   await page.getByRole('link', { name: 'Lipsticks' }).first().click();
   await expect(page.getByRole('heading', { level: 1, name: 'Lipsticks' })).toBeVisible();
   await expect(products(page)).toHaveCount(3);

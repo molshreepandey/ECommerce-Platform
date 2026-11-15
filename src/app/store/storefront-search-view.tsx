@@ -173,20 +173,8 @@ export async function StorefrontSearchView({
           ]}
         />
       )}
-      <Flexbox direction="column-then-row" justify="between" gap="md">
-        <div className="flex items-center gap-md">
-          {categoryArt === null ? null : (
-            <span className="relative hidden size-16 shrink-0 overflow-hidden rounded-card border border-lowlight bg-white sm:block">
-              <Image
-                src={categoryArt}
-                alt=""
-                fill
-                sizes="64px"
-                className="object-cover"
-                unoptimized
-              />
-            </span>
-          )}
+      {result.category === null ? (
+        <Flexbox direction="column-then-row" justify="between" gap="md">
           <Flexbox direction="column" gap="xs">
             <Heading level={1} variant="heading2">
               {title}
@@ -197,46 +185,78 @@ export async function StorefrontSearchView({
               {resultLabel}
             </Text>
           </Flexbox>
-        </div>
-        <div className="w-full md:w-60">
-          <SortSelect basePath={basePath} state={state} />
-        </div>
-      </Flexbox>
+          <div className="w-full md:w-60">
+            <SortSelect basePath={basePath} state={state} />
+          </div>
+        </Flexbox>
+      ) : (
+        /* Category banner: the category's own picture, its name and its sub-categories. */
+        <section
+          aria-labelledby="category-heading"
+          className={`grid grid-cols-1 overflow-hidden border border-lowlight bg-white ${categoryArt === null ? '' : 'sm:grid-cols-[minmax(0,1fr)_16rem] lg:grid-cols-[minmax(0,1fr)_22rem]'}`}
+        >
+          <div className="flex flex-col justify-center gap-md p-lg sm:p-xl lg:p-2xl">
+            <Text as="p" variant="body3-medium">
+              <span className="tracking-[0.18em] text-gold uppercase">
+                {result.category.trail.at(-2)?.name ?? 'Department'}
+              </span>
+            </Text>
+            <Heading level={1} variant="heading1-5" id="category-heading">
+              {title}
+            </Heading>
+            <Text variant="body2" tone="muted">
+              {resultLabel}
+            </Text>
+            {result.category.children.length === 0 ? null : (
+              <nav aria-label="Sub-categories">
+                <ul className="flex flex-wrap gap-sm">
+                  {result.category.children.map((child) => {
+                    const childArt = categoryArtUrl(child.slug);
+                    return (
+                      <li key={child.slug}>
+                        <NextLink
+                          href={`/categories/${child.slug}`}
+                          className={`inline-flex items-center gap-sm rounded-pill border border-lowlight bg-background py-xs pr-md pl-xs text-headings transition-colors hover:border-primary hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body2-medium' })}`}
+                        >
+                          {childArt === null ? null : (
+                            <span className="relative block size-8 overflow-hidden rounded-pill bg-strokes">
+                              <Image
+                                src={childArt}
+                                alt=""
+                                fill
+                                sizes="32px"
+                                className="object-cover"
+                                unoptimized
+                              />
+                            </span>
+                          )}
+                          {child.name}
+                        </NextLink>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </nav>
+            )}
+          </div>
+          {categoryArt === null ? null : (
+            <div className="relative hidden min-h-56 bg-strokes sm:block">
+              <Image
+                src={categoryArt}
+                alt=""
+                fill
+                sizes="(max-width: 1024px) 256px, 352px"
+                className="object-cover"
+                unoptimized
+              />
+            </div>
+          )}
+        </section>
+      )}
       {isValid ? null : (
         <InlineAlert tone="warning">
           Some filters in the address were not valid, so they were ignored.
         </InlineAlert>
-      )}
-      {result.category === null || result.category.children.length === 0 ? null : (
-        <nav aria-label="Sub-categories">
-          <ul className="flex flex-wrap gap-sm">
-            {result.category.children.map((child) => {
-              const childArt = categoryArtUrl(child.slug);
-              return (
-                <li key={child.slug}>
-                  <NextLink
-                    href={`/categories/${child.slug}`}
-                    className={`inline-flex items-center gap-sm rounded-pill border border-lowlight bg-white py-xs pr-md pl-xs text-headings transition-colors hover:border-primary hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body2-medium' })}`}
-                  >
-                    {childArt === null ? null : (
-                      <span className="relative block size-8 overflow-hidden rounded-pill bg-strokes">
-                        <Image
-                          src={childArt}
-                          alt=""
-                          fill
-                          sizes="32px"
-                          className="object-cover"
-                          unoptimized
-                        />
-                      </span>
-                    )}
-                    {child.name}
-                  </NextLink>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
       )}
       <div className="grid grid-cols-1 gap-xl md:grid-cols-[16rem_1fr]">
         <FilterDrawer activeCount={activeFilters.length}>
@@ -248,6 +268,13 @@ export async function StorefrontSearchView({
           />
         </FilterDrawer>
         <Flexbox direction="column" gap="xl">
+          {result.category === null ? null : (
+            <div className="flex justify-end">
+              <div className="w-full sm:w-60">
+                <SortSelect basePath={basePath} state={state} />
+              </div>
+            </div>
+          )}
           {activeFilters.length === 0 ? null : (
             <div className="flex flex-wrap items-center gap-sm">
               <ul aria-label="Active filters" className="flex flex-wrap gap-sm">

@@ -10,8 +10,13 @@ import { Link } from '@/components/atoms/Link';
 import { Skeleton } from '@/components/atoms/Skeleton';
 import { Text } from '@/components/atoms/Text';
 import { HomeBanners } from '@/components/organisms/Merchandising';
+import { isNotFoundError } from '@/lib/errors';
 import { SearchResultsGrid } from '@/components/organisms/StorefrontCatalogue';
-import { categoryArtUrl, displayImageUrl } from '@/modules/catalogue/catalogue-art';
+import {
+  categoryArtUrl,
+  displayImageUrl,
+  productPhotoUrl,
+} from '@/modules/catalogue/catalogue-art';
 import { getHomeMerchandising } from '@/modules/merchandising/merchandising.cache';
 import { visibleNow } from '@/modules/merchandising/merchandising.service';
 import type { ProductSearchHit, ProductSearchQuery } from '@/modules/search/product-search.schema';
@@ -111,32 +116,67 @@ function Shelf({
   );
 }
 
-// Four in-stock products from the catalogue beside the hero copy; nothing when the catalogue is empty.
+const heroDepartments = ['apparel', 'footwear', 'beauty'] as const;
+
+// One in-stock product from each of these departments, preferring one with a real photograph; a missing
+// department or an empty catalogue simply leaves it out.
+async function heroPicks(): Promise<{ department: string; product: ProductSearchHit }[]> {
+  const picks = await Promise.all(
+    heroDepartments.map(async (department) => {
+      try {
+        const { hits, category } = await searchStorefront({
+          ...browseQuery,
+          categorySlug: department,
+          sort: 'relevance',
+        });
+        const withImage = hits.filter((hit) => hit.imageUrl !== null);
+        const product = withImage.find((hit) => productPhotoUrl(hit.slug) !== null) ?? withImage[0];
+        const name = category?.trail.at(-1)?.name ?? department;
+        return product === undefined ? null : { department: name, product };
+      } catch (error) {
+        // Only a department that does not exist (or is inactive) is skipped; other failures surface.
+        if (isNotFoundError(error)) return null;
+        throw error;
+      }
+    }),
+  );
+  return picks.filter((pick) => pick !== null);
+}
+
+// The hero collage: a tall picture beside two stacked ones, each a real product linking to its page.
 async function HeroShowcase() {
   await connection();
-  const { hits } = await searchStorefront({ ...browseQuery, sort: 'price_desc' });
-  const showcase = hits.filter((hit) => hit.imageUrl !== null).slice(0, 4);
-  if (showcase.length < 4) return null;
+  const picks = await heroPicks();
+  if (picks.length < 3) return null;
   return (
-    <ul aria-label="Featured products" className="grid grid-cols-2 gap-sm sm:gap-md">
-      {showcase.map((product) => (
-        <li key={product.productId}>
+    <ul
+      aria-label="Featured products"
+      className="grid h-[26rem] grid-cols-2 grid-rows-2 gap-sm sm:h-[32rem] sm:gap-md lg:h-[36rem]"
+    >
+      {picks.map(({ department, product }, index) => (
+        <li key={product.productId} className={index === 0 ? 'row-span-2' : ''}>
           <NextLink
             href={`/products/${product.slug}`}
-            className={`group relative block aspect-[4/5] overflow-hidden bg-white ${focusRingClassNames}`}
+            className={`group relative block h-full overflow-hidden bg-white ${focusRingClassNames}`}
           >
             <Image
               src={displayImageUrl(product.imageUrl ?? '')}
               alt={product.imageAlt ?? product.name}
               fill
-              sizes="(max-width: 768px) 45vw, 280px"
-              className="object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+              sizes="(max-width: 768px) 50vw, 340px"
+              className="object-cover transition-transform duration-700 group-hover:scale-[1.03]"
               unoptimized
+              priority={index === 0}
             />
-            <span className="absolute inset-x-0 bottom-0 truncate bg-white/92 px-md py-sm">
-              <Text as="span" variant="body3-medium">
-                {product.name}
-              </Text>
+            <span className="absolute inset-x-0 bottom-0 flex flex-col gap-xs bg-white/94 px-md py-sm">
+              <span className="text-body4-medium tracking-[0.18em] text-gold uppercase">
+                {department}
+              </span>
+              <span className="truncate">
+                <Text as="span" variant="body3-medium">
+                  {product.name}
+                </Text>
+              </span>
             </span>
           </NextLink>
         </li>
@@ -149,7 +189,7 @@ function Hero() {
   return (
     <section
       aria-labelledby="home-heading"
-      className="grid items-center gap-2xl border-b border-lowlight pb-3xl md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]"
+      className="grid items-center gap-2xl bg-gold-light p-lg sm:p-2xl md:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:p-3xl"
     >
       <div className="flex flex-col items-start gap-lg">
         <Text as="p" variant="body3-medium">

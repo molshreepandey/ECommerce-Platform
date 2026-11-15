@@ -27,7 +27,7 @@ export function StoreLayout({
           </span>
         </p>
       </div>
-      <header className="border-b border-lowlight bg-white shadow-sm">
+      <header className="border-b border-lowlight bg-white/95 backdrop-blur md:sticky md:top-0 md:z-30">
         <div className="mx-auto flex w-full max-w-300 flex-wrap items-center justify-between gap-md px-lg py-md">
           {brand ?? (
             <Link href="/" appearance="plain" variant="body1-medium">
@@ -39,11 +39,16 @@ export function StoreLayout({
               {headerSearch}
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-lg">
+          <div className="flex items-center gap-lg">
             <nav aria-label="Primary">
               <ul className="flex flex-wrap items-center gap-lg">
                 {navigationLinks.map((navigationLink) => (
-                  <li key={navigationLink.href}>
+                  <li
+                    key={navigationLink.href}
+                    className={
+                      navigationLink.hideOnSmallScreens === true ? 'hidden sm:list-item' : ''
+                    }
+                  >
                     <Link href={navigationLink.href} appearance="subtle">
                       {navigationLink.label}
                     </Link>

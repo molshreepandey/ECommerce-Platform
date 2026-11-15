@@ -39,14 +39,14 @@ const bannerSeeds = [
   {
     key: 'electronics',
     title: 'Upgrade your phone',
-    linkUrl: '/c/smartphones',
+    linkUrl: '/categories/smartphones',
     startsAtDay: -5,
     endsAtDay: 60,
   },
   {
     key: 'expired-summer',
     title: 'Summer sale (ended)',
-    linkUrl: '/c/apparel',
+    linkUrl: '/categories/apparel',
     startsAtDay: -40,
     endsAtDay: -1,
   },

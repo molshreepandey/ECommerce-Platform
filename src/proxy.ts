@@ -10,6 +10,7 @@ import { signInRedirectPath } from '@/lib/sign-in-redirect';
 import { isMissingStorefrontPage } from '@/modules/storefront/storefront-route-check.service';
 
 const safeRequestIdPattern = /^[A-Za-z0-9-]{8,64}$/;
+const shortCategoryLinkPattern = /^\/c\/([a-z0-9]+(?:-[a-z0-9]+)*)$/;
 const unknownHostContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
 
 function withHeaders(response: NextResponse, headers: Record<string, string>): NextResponse {
@@ -63,6 +64,17 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
       NextResponse.next({ request: { headers: forwardedHeaders } }),
       securityHeaders,
     );
+  }
+
+  // Short category links (/c/<slug>, used by banners the early demo data saved) go to the category page.
+  const shortCategoryLink =
+    decision.surface === 'store' ? shortCategoryLinkPattern.exec(pathname) : null;
+  if (shortCategoryLink !== null) {
+    const categoryUrl = new URL(
+      `/categories/${shortCategoryLink[1] ?? ''}`,
+      surfaces.store.publicOrigin,
+    );
+    return withHeaders(NextResponse.redirect(categoryUrl, 308), securityHeaders);
   }
 
   const redirectPath = signInRedirectPath({

@@ -1,6 +1,11 @@
 import type { ReactNode } from 'react';
 
-export type StoreNavigationLink = Readonly<{ label: string; href: string }>;
+// hideOnSmallScreens: left out of the phone header to keep it to one row (still reachable elsewhere).
+export type StoreNavigationLink = Readonly<{
+  label: string;
+  href: string;
+  hideOnSmallScreens?: boolean;
+}>;
 
 export type StoreLayoutProps = Readonly<{
   storeName: string;
