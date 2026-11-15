@@ -106,7 +106,12 @@ test('a catalogue manager builds a new product type and lists a product of it wi
     await choose(page, 'Brand', `Stride ${suffix}`);
     await visibleField(page, 'Name').fill(productName);
     await page.getByRole('button', { name: 'Create product' }).click();
-    await expect(visibleText(page, 'Choose a value')).toBeVisible();
+    // The error must be attached to the Material field itself. The empty select also shows "Choose a
+    // value" as its placeholder, so a page-wide text match passed before the error rendered, and failed
+    // (two matches) once it had.
+    await expect(
+      page.getByRole('combobox', { name: 'Material (required)' }).filter({ visible: true }),
+    ).toHaveAccessibleDescription('Choose a value');
     await expect(page).toHaveURL(`${adminOrigin}/products/new`);
   });
 
