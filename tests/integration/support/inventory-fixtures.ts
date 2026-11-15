@@ -63,7 +63,7 @@ export async function createCustomerRow(): Promise<CustomerId> {
 }
 
 export async function createWarehouseRow(
-  overrides: Partial<{ code: string; priority: number; isActive: boolean }> = {},
+  overrides: Partial<{ code: string; priority: number; isActive: boolean; pincode: string }> = {},
 ) {
   return database.warehouse.create({
     data: {
@@ -72,7 +72,7 @@ export async function createWarehouseRow(
       addressLine1: '1 Test Street',
       city: 'Bengaluru',
       state: 'Karnataka',
-      pincode: '560001',
+      pincode: overrides.pincode ?? '560001',
       contactName: 'Test Contact',
       contactPhone: '9876500000',
       priority: overrides.priority ?? 1,
@@ -213,6 +213,10 @@ export async function createReturnRequestRow(input: {
         taxRateBasisPoints: 500,
         taxPaise: 3_805,
         lineTotalPaise: 79_900 * item.quantity,
+        weightGrams: 500,
+        lengthMm: 300,
+        breadthMm: 200,
+        heightMm: 50,
       },
       select: { id: true },
     });

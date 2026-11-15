@@ -21,6 +21,11 @@ export default defineConfig({
       name: 'chromium-mobile-360',
       use: { ...devices['Desktop Chrome'], viewport: { width: 360, height: 740 } },
     },
+    // Wave 14: tablet width (plan §10D: 360 px, tablet and desktop).
+    {
+      name: 'chromium-tablet-768',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 1024 } },
+    },
   ],
   webServer: {
     command: 'npm run start:test',

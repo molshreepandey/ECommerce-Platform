@@ -1,13 +1,13 @@
 import type { Surface } from './host-routing';
 
 const signInPath = '/login';
-const storeSignInRequiredPrefix = '/account';
+const storeSignInRequiredPrefixes = ['/account', '/checkout', '/orders'] as const;
 const adminPublicPaths = new Set([signInPath]);
 
 function requiresSignIn(surface: Surface, pathname: string): boolean {
   if (surface === 'admin') return !adminPublicPaths.has(pathname);
-  return (
-    pathname === storeSignInRequiredPrefix || pathname.startsWith(`${storeSignInRequiredPrefix}/`)
+  return storeSignInRequiredPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
 

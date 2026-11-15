@@ -30,7 +30,12 @@ export const loginSchema = z.strictObject({
 export type LoginInput = z.infer<typeof loginSchema>;
 
 export const updateProfileSchema = z
-  .strictObject({ fullName: fullNameSchema.optional(), phone: indianMobileSchema.optional() })
+  .strictObject({
+    fullName: fullNameSchema.optional(),
+    phone: indianMobileSchema.optional(),
+    // Required by the service when the phone changes: the phone is an OTP login key (M2).
+    currentPassword: z.string().min(1, 'Enter your current password').max(128).optional(),
+  })
   .refine((input) => input.fullName !== undefined || input.phone !== undefined, {
     message: 'Change at least one field',
   });

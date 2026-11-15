@@ -166,3 +166,12 @@ export function setDefaultAddress(
     return { ...existing, isDefault: true };
   });
 }
+
+// Checkout (C27): the customer's own active address, read inside the checkout transaction.
+export function findCustomerAddress(
+  database: DatabaseClient,
+  customerId: string,
+  addressId: string,
+): Promise<AddressRow | null> {
+  return findActiveAddress(database, customerId, addressId);
+}

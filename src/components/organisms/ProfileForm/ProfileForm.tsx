@@ -25,17 +25,21 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     const read = formReader(event.currentTarget);
     const fullName = read('fullName').trim();
     const phone = read('phone').trim();
+    const currentPassword = read('currentPassword');
     const changes = {
       ...(fullName === profile.fullName ? {} : { fullName }),
       ...(phone === profile.phone ? {} : { phone }),
     };
+    // The server asks for the current password only when the mobile number changes (M2).
+    const body =
+      'phone' in changes && currentPassword !== '' ? { ...changes, currentPassword } : changes;
     setFormError(null);
     if (Object.keys(changes).length === 0) {
       setFieldErrors({});
       showToast({ title: 'Nothing to save', tone: 'info' });
       return;
     }
-    const parsed = updateProfileSchema.safeParse(changes);
+    const parsed = updateProfileSchema.safeParse(body);
     if (!parsed.success) {
       setFieldErrors(firstMessages(z.flattenError(parsed.error).fieldErrors));
       return;
@@ -48,7 +52,11 @@ export function ProfileForm({ profile }: ProfileFormProps) {
     });
     setIsPending(false);
     if (result.ok) {
-      showToast({ title: 'Profile saved', tone: 'success' });
+      showToast({
+        title:
+          'phone' in changes ? 'Profile saved; other devices were signed out' : 'Profile saved',
+        tone: 'success',
+      });
       router.refresh();
       return;
     }
@@ -90,6 +98,14 @@ export function ProfileForm({ profile }: ProfileFormProps) {
         defaultValue={profile.phone}
         required
         error={fieldErrors['phone']}
+      />
+      <FormField
+        label="Current password"
+        name="currentPassword"
+        type="password"
+        autoComplete="current-password"
+        hint="Needed only to change your mobile number."
+        error={fieldErrors['currentPassword']}
       />
       <div>
         <Button type="submit" appearance="primary" isLoading={isPending}>

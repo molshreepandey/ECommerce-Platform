@@ -37,10 +37,18 @@ export function AdminSidenav({ navigationItems }: AdminSidenavProps) {
       </div>
       <nav aria-label="Admin">
         <ul className="flex gap-xs overflow-x-auto px-sm pb-sm md:flex-col md:overflow-visible">
-          {navigationItems.map((navigationItem) => {
+          {navigationItems.map((navigationItem, index) => {
             const isActive = navigationItem.href === activeHref;
+            const startsSection =
+              navigationItem.section !== undefined &&
+              navigationItem.section !== navigationItems[index - 1]?.section;
             return (
               <li key={navigationItem.href}>
+                {startsSection ? (
+                  <span className="hidden px-md pt-md pb-xs text-body4-medium tracking-wide text-lowlight-2 uppercase md:block">
+                    {navigationItem.section}
+                  </span>
+                ) : null}
                 <NextLink
                   href={navigationItem.href}
                   aria-current={isActive ? 'page' : undefined}

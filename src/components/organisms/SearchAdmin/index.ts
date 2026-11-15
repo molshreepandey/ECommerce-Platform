@@ -1,0 +1,1 @@
+export { SearchIndexTools } from './SearchIndexTools';

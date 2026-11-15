@@ -70,7 +70,7 @@ export async function createDependents(productId: string, variantId: string) {
       orderNumber: 'ORD-TEST-0001',
       customerId: customer.id,
       idempotencyKey: 'archive-test',
-      requestFingerprint: 'fingerprint',
+      requestFingerprint: 'a'.repeat(64),
       subtotalPaise: 79_900,
       taxPaise: 3_805,
       totalPaise: 79_900,
@@ -93,6 +93,10 @@ export async function createDependents(productId: string, variantId: string) {
       taxRateBasisPoints: 500,
       taxPaise: 3_805,
       lineTotalPaise: 79_900,
+      weightGrams: 500,
+      lengthMm: 300,
+      breadthMm: 200,
+      heightMm: 50,
     },
   });
   await database.review.create({

@@ -38,3 +38,51 @@ export async function insertAuditLog(database: DatabaseClient, event: AuditEvent
     select: { id: true },
   });
 }
+
+export interface AuditListFilters {
+  entityType: string | null;
+  entityId: string | null;
+  actorId: string | null;
+  actionPrefix: string | null;
+  createdFrom: Date | null;
+  createdTo: Date | null;
+  beforeId: string | null;
+  limit: number;
+}
+
+// Keyset pages on id DESC: ids are uuidv7 (time-ordered), so the primary key gives newest-first pages;
+// entity and actor filters use audit_logs(entity_type, entity_id, …) and audit_logs(actor_id, …).
+export function listAuditRows(database: DatabaseClient, filters: AuditListFilters) {
+  return database.auditLog.findMany({
+    where: {
+      ...(filters.entityType === null ? {} : { entityType: filters.entityType }),
+      ...(filters.entityId === null ? {} : { entityId: filters.entityId }),
+      ...(filters.actorId === null ? {} : { actorId: filters.actorId }),
+      ...(filters.actionPrefix === null ? {} : { action: { startsWith: filters.actionPrefix } }),
+      ...(filters.createdFrom === null && filters.createdTo === null
+        ? {}
+        : {
+            createdAt: {
+              ...(filters.createdFrom === null ? {} : { gte: filters.createdFrom }),
+              ...(filters.createdTo === null ? {} : { lt: filters.createdTo }),
+            },
+          }),
+      ...(filters.beforeId === null ? {} : { id: { lt: filters.beforeId } }),
+    },
+    select: {
+      id: true,
+      actorType: true,
+      actorId: true,
+      action: true,
+      entityType: true,
+      entityId: true,
+      before: true,
+      after: true,
+      ipAddress: true,
+      requestId: true,
+      createdAt: true,
+    },
+    orderBy: [{ id: 'desc' }],
+    take: filters.limit + 1,
+  });
+}

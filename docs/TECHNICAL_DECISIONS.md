@@ -824,3 +824,231 @@ HTTP route.
 - The test-only simulated dispatch in `stock-reservations.test.ts` is gone: release-versus-dispatch and
   "release only what is not dispatched" now run against `dispatchReservedStock`
   (`stock-dispatch-restock.test.ts`). Races with real shipment status changes remain Wave 9 work (L40).
+
+## TD-023 Cart, pricing, coupons and settings (Wave 7)
+
+- **Guest cart in a cookie.** `store_guest_cart` (httpOnly, SameSite=Lax, `__Host-` with HTTPS) holds
+  `[[variantId, quantity]]`, at most 30 lines; anything malformed reads as an empty cart. It is not signed:
+  every line is re-checked and re-priced from PostgreSQL, so tampering gains nothing. It is merged into the
+  saved cart after sign-in and registration (quantities summed, then limited to 10 per line and to current
+  availability; unsellable lines dropped; a saved line never shrinks). A failed merge never fails sign-in.
+- **Pricing is pure and in integer paise.** Prices are GST-inclusive; the tax shown is the included
+  component `round_half_up(net × r / (10000 + r))` per line, where `net` is the line total minus its share
+  of the coupon (largest-remainder allocation, so shares add up exactly). Free shipping applies when the
+  amount after the coupon reaches the threshold; the COD fee applies to COD orders only. The cart shows the
+  total without the COD fee and states the fee separately.
+- **Coupons** are evaluated in a fixed order (inactive, not started, expired, exhausted, per-customer
+  limit, first order, minimum cart) so the customer sees the first reason. Percent discounts round down.
+  "First order" counts earlier orders that were not cancelled. Guests must sign in to use a coupon.
+- **Settings** are rows in `store_settings` with code defaults only for keys a fresh test database lacks.
+  Saves lock the rows in key order, write one audit row with every changed value, and expire the cached
+  copy after commit. Checkout always reads the settings inside its own transaction.
+
+## TD-024 Checkout and the simulated online gateway (Wave 8; owner decisions 2026-11-14)
+
+- **Lock order** (extends TD-019): customer cart row → coupon row (guarded `UPDATE … used_count + 1`) →
+  order insert → shipments → inventory (L0b shipments … L5 stock rows). Every checkout takes them in this
+  order, so concurrent checkouts cannot deadlock each other.
+- **Idempotency.** The request fingerprint is SHA-256 of the canonical body (`addressId`,
+  `paymentMethod`, `expectedTotalPaise`). The existing order is looked up _after_ the cart lock, so a
+  duplicate that waited for the first request sees its committed order; the insert itself uses
+  `ON CONFLICT (customer_id, idempotency_key) DO NOTHING` so a race never aborts the transaction.
+- **Allocation** (plan §6) is a pure function over one unlocked read of available stock in active
+  warehouses; the guarded reservation update decides, so a stale read only becomes a 409.
+- **Courier selection at checkout**: best-priority active courier serving the pincode; for COD it must
+  offer COD there and accept the amount. The chosen courier is stored on each shipment.
+- **Online payment** (owner chose it alongside COD): the customer picks the outcome on the simulated
+  gateway (success / insufficient funds / bank unavailable), so every run is deterministic. Each attempt is
+  a `payment_attempts` row unique per `(payment, Idempotency-Key)`, with at most one success per payment
+  (partial unique index). Three declines, or 30 minutes without payment, cancel the order with payment
+  `FAILED` and release the stock. Staff can confirm an online order only once it is paid.
+
+## TD-025 Order lifecycle, demo courier and webhooks (Wave 9)
+
+- Order and shipment transitions are typed tables (`order-state.ts`); every change is a guarded
+  `UPDATE … WHERE status = <from>`, 0 rows → 409 `INVALID_TRANSITION`. The order row is locked first, then
+  all its shipments, then inventory.
+- The order status is recomputed from its live shipments in the same transaction; COD becomes
+  `COLLECTED` when the whole order is delivered and `FAILED` when every shipment is returned to origin.
+  Dispatch happens on `SHIPPED`, restock on `RTO_RECEIVED`.
+- AWB creation records `AWB_PENDING` and commits, calls the adapter outside any transaction, then saves
+  `READY_TO_SHIP` with the AWB, or moves the shipment back to `PACKED` (503 `COURIER_UNAVAILABLE`).
+- Webhooks: HMAC-SHA256 over `"<timestamp>.<raw body>"`, constant-time compare, 5-minute tolerance. A
+  receipt row is committed first (`ON CONFLICT` on `(courier, event id)` → duplicate), the event is applied
+  in its own transaction, and a refused transition marks the receipt `FAILED`. The admin "simulate next
+  scan" button signs a demo event and sends it through the same processing.
+- Manual admin steps and courier events both write a shipment tracking event, so the customer timeline
+  shows every step.
+
+## TD-026 Customers, reports and audit (Wave 10)
+
+- Blocking a customer revokes every session in the same transaction, so sign-in and checkout stop at once
+  (checkout also re-checks the status and answers 403).
+- Reports use aggregate SQL over `orders(placed_at)` and `payments(status, collected_at)` with IST
+  calendar days; top products and categories read the order-line snapshots (L31). Ranges longer than a year
+  fall back to the default 30 days. Reconciliation compares the sum of the daily report rows, the order
+  rows and the payment rows of the same non-cancelled orders.
+- The audit trail pages newest-first by uuidv7 id on the primary key (ids are time-ordered), with entity,
+  actor, action-prefix and date filters.
+
+## TD-027 Post-purchase rules (Waves 11–12, 2026-11-14)
+
+- **OTP cooldown never reveals accounts:** every number gets a challenge row (its code is never sent for
+  an unknown or blocked number, and verify refuses it because no active customer has the number), so the
+  30-second cooldown answers the same for every number. With `OTP_DISPLAY_IN_UI=true` the popup still
+  appears only for real accounts (L66, demo only).
+- **Returns lock order (L60 resolved):** every return step locks the `return_requests` row before any
+  inventory lock; only units in DELIVERED shipments are returnable, so an RTO unit can never also be
+  returned. Refunds are capped at what was paid for the units after the coupon.
+- **COD per package:** a split COD order collects each package's share of the order total, by the value
+  of its goods, with the rounding remainder on the last package by id; label and manifest show that share,
+  so the total is never collected twice (L71).
+- **Split orders:** a package can be packed while the order is `PARTIALLY_SHIPPED` (a Wave 9 defect found
+  by a Wave 12 test).
+- **Proxy route check:** `/collections/<slug>` is looked up as a collection (it was looked up as a
+  category, so every collection page was 404).
+
+## TD-028 Admin power tools (Wave 13, 2026-11-15)
+
+- **Stock transfer (D27):** one transaction, one TRANSFER_OUT and one TRANSFER_IN movement per line,
+  idempotent per staff member and `Idempotency-Key` like receipts; only available units move (the guarded
+  update keeps on hand ≥ reserved); all stock rows are locked in (variant, warehouse) order, so opposite
+  transfers cannot deadlock. Inactive warehouses and archived variants are allowed (goods physically move).
+- **Re-categorise (D21):** every non-archived product on A moves to the active leaf B in one transaction
+  (categories share-locked in id order, then products in id order, the tagging lock order); archived
+  products stay on A, as tagging refuses them; at most 2,000 products per change.
+- **Staff management (D3):** `staff.manage` (super admin) only; Argon2id passwords of at least 12
+  characters; demo email domain and demo password refused outside development and test; nobody changes
+  their own roles or status; one advisory lock serialises role and status changes so the last active
+  super admin can never be removed, even by two concurrent changes; deactivation revokes every session.
+- **CSV (D8, D16, D41):** an RFC 4180 parser and writer in `src/lib/csv.ts` (no dependency); exported
+  cells that a spreadsheet would run as a formula are prefixed with `'`. Uploads arrive as JSON
+  `{ csv }` (≤ 1 MB, ≤ 2,000 rows) through the normal body parser and origin check; a bad header is one
+  422, bad rows are reported by line and never written. Product upload creates drafts only (existing slugs
+  and SKUs are reported, never overwritten); each product with its variants is one transaction.
+  Report exports refuse more than 20,000 rows (422) instead of truncating.
+- **Search index tools (D48):** status, "sync now" (outbox drain) and full reindex (alias swap) for
+  `search.manage`; Elasticsearch calls never run inside a database transaction.
+
+## TD-029 API documentation (Wave 15, 2026-11-15)
+
+- `docs/openapi.json` (OpenAPI 3.1) is generated from the route handlers by `npm run docs:openapi`:
+  paths and methods from `src/app/api/**/route.ts`, request bodies and query strings from the Zod schema
+  each handler parses (`z.toJSONSchema`), auth from `requirePermission` / `requireCustomer` /
+  `requireStaff`. A unit test fails when the document and the handlers differ.
+- Swagger UI is `swagger-ui-dist` **5.34.1** (Apache-2.0, pinned exactly, published 2026-10-30), served
+  from this origin behind a staff session, so the CSP stays `script-src 'self'` (no CDN). Its dependency
+  `@scarf/scarf` has a telemetry install script: npm did not run it (install scripts need approval), and
+  `"scarfSettings": { "enabled": false }` in `package.json` turns it off elsewhere.
+
+## TD-030 P2 features (Wave 16, 2026-11-15)
+
+- **Search autocomplete (C14):** `GET /api/store/search/suggest?q=` (2–100 characters after trimming,
+  `Cache-Control: no-store`) returns up to 6 product names by prefix (`match_phrase_prefix` on the
+  `products` alias, ACTIVE only) and up to 4 matching storefront categories. While Elasticsearch is down
+  the products come from PostgreSQL through the same `withPostgresFallback` as search. The header search
+  box follows the ARIA combobox pattern (150 ms debounce, arrow keys, Enter, Escape).
+- **Notification log (C38):** order placed, shipment shipped and shipment delivered each record one
+  simulated SMS as a `notification.sent` row of the append-only audit log, in the same transaction as the
+  event, so a message exists exactly when its event committed. The recipient is masked to the last four
+  digits. Customers see their own order's messages (someone else's order is 404); staff need
+  `orders.read`. Nothing is sent, so nothing can fail: there is no failed-delivery history or retry. A
+  dedicated table (and a real sender with failure states) would need a migration and is not built.
+- **Nearest-warehouse allocation (plan §6 "next extension"):** setting `allocationStrategy` =
+  `PRIORITY` (default) or `NEAREST_PINCODE` (`settings.write`, audited). `NEAREST_PINCODE` orders
+  warehouses by the length of the PIN prefix they share with the delivery PIN (zone → circle → sorting
+  district → delivery office), then by priority. It works for every valid 6-digit PIN but is an
+  **approximation of distance, not a geographic distance**: no PIN coordinates dataset is used, two
+  warehouses with the same shared-prefix length are not ranked by kilometres, and neighbouring PINs across
+  a circle boundary look "far". Only the warehouse order changes; the allocation rules (one warehouse if
+  possible, split only when needed) and the guarded reservation are unchanged. Exchange orders use the same
+  setting.
+- An unused haversine draft (`src/modules/allocation/distance.service.ts` with a 2-PIN coordinates file)
+  was removed on 2026-11-15 (backup in `~/ecommerce-backups/20261115-orphans/`, owner-approved).
+
+## TD-031 Final verification fixes (2026-11-15)
+
+- **Build panic was a stale Turbopack cache, not Swagger UI.** `next build` panicked with "node process
+  exited before we could connect to it" on `swagger-ui.css.css`; excluding the Swagger page it panicked the
+  same way on `globals.css.css`, and also outside the command sandbox. Every `*.css` file goes through the
+  `@tailwindcss/turbopack` loader (the `.css.css` name is the `as: '*.css'` rename, as before). With
+  `.next/cache/turbopack` (Next 16.3+ caches builds by default) moved aside, the unchanged project builds;
+  a clean checkout builds too. The earlier uncommitted `webpack()` hook (a dead rule for a name only
+  Turbopack produces, and 3 lint errors) was removed. If the panic recurs: delete `.next/cache/turbopack`.
+- **`npm run lint` runs `next typegen` first.** Route handlers use the generated global `RouteContext`
+  types; on a clean checkout (and in CI, where lint runs before typecheck) ESLint reported 79 "type cannot
+  be resolved" errors.
+- **The simulated gateway is off in production.** The customer picks its outcome, so with
+  `APP_ENV=production` checkout refuses `ONLINE` (422 `ONLINE_PAYMENT_UNAVAILABLE`), payment submission
+  refuses too, and the checkout page offers COD only. Development, test and staging (the review demo) are
+  unchanged.
+- **Production never returns the login OTP**, even if `OTP_DISPLAY_IN_UI=true` is set (plan C3).
+- **Exchanges are like-for-like.** An exchange order is free, so the replacement must be the same variant
+  or one whose current price is at most the unit price paid (before: any active variant of the product).
+- **Courier webhook receipts are stored in the processing transaction.** Before, a receipt was committed
+  first; a non-domain failure (timeout, deadlock) left it `RECEIVED` and the courier's retry was answered
+  `DUPLICATE`, losing the event. Now such a failure stores nothing and the retry is processed; a refused
+  event is still stored once as `FAILED`.
+- The Swagger asset allow-list is a `Map` (a plain object let `constructor` through to a 500).
+- Removed (owner-approved, backed up in `~/ecommerce-backups/20261115-orphans/`):
+  `e2e/ui-hardening.spec.ts` (imported a package that is not installed and targeted the development server
+  on port 3000; `e2e/accessibility.spec.ts` already covers the same checks against the test server) and
+  the unused `src/modules/pricing/store-settings.cache.ts`.
+
+## TD-032 Remaining security findings and UI polish (2026-11-15)
+
+Fixed (each with a regression test):
+
+- **M3 shared guest bucket:** a guest cart write from an unknown client IP (no trusted proxy hop set) is
+  not rate limited, instead of sharing one site-wide `guest|unknown` bucket that one client could exhaust
+  for everyone. Guest carts live only in the visitor's cookie and coupons need sign-in, so nothing
+  server-side is unprotected; signed-in customers keep their per-customer budget and the per-IP guest
+  limit returns once `trustedProxyHopCount` is set.
+- **M4 unpaid online orders:** a customer may hold at most 2 online orders waiting for payment inside the
+  30-minute window; a third ONLINE checkout is 409 `UNPAID_ORDERS_LIMIT` (COD is never capped). Counted
+  under the cart row lock, so parallel checkouts cannot both pass.
+- **L1 webhook body size:** `readTextWithin` (`src/lib/request-body.ts`) refuses a declared
+  Content-Length over 64 KB before reading and stops streaming as soon as the limit is passed.
+- **L5 public endpoints:** new policies `public-search` (search and autocomplete, per known client IP,
+  same unknown-IP rule as M3) and `review-write` (per customer, before any database work).
+
+Not changed, owner decision needed:
+
+- **M2 phone verification:** OTP login trusts a phone number that was never verified. Safest fix: a
+  `phone_verified_at` column (migration), set by a successful OTP; OTP login only for verified phones;
+  changing the phone clears it and revokes other sessions. Needs a migration and a product decision.
+- **Registration bucket:** with an unknown IP all registrations share one 10/hour bucket. Loosening it
+  would allow mass sign-ups; the real fix is the trusted proxy hop count (a deployment requirement).
+- **L2 shared courier secret:** recommended: a per-partner secret (or a key derived from the master
+  secret and the partner code) and the partner code inside the signed payload. Touches the courier
+  adapter interface; both partners are simulated today.
+- **L6 CSP `'unsafe-inline'` scripts:** removing it needs per-request nonces, which forces every page to
+  render dynamically and gives up the static and partial prerendering this app uses. No XSS sink was
+  found; keep until a nonce/hash strategy is chosen.
+
+UI: the header cart count badge no longer shows a status dot (`Badge hasDot={false}`); the search
+placeholder fits the field; the admin sidebar is grouped into sections (Orders, Customers, Catalogue,
+Inventory, Storefront, Administration; desktop only). The unused `SearchBar` molecule (superseded by
+`StoreSearch` in Wave 16) was removed (backup in `~/ecommerce-backups/20261115-orphans/`).
+
+## TD-033 Re-authentication, partner keys, CSP and proxy readiness (2026-11-15)
+
+- **M2 (partly fixed):** changing the mobile number (an OTP login key) needs the current password
+  (`currentPassword`; 400 `CURRENT_PASSWORD_REQUIRED` / `CURRENT_PASSWORD_INCORRECT`, wrong guesses share
+  the `customer-login` budget per account) and signs out every other session of the customer in the same
+  transaction (audited as `endedLogins`). A name-only change needs no password. The remaining risk,
+  registering first with someone else's number, needs a verified-phone column:
+  `docs/migrations/proposed-phone-verification.md` (not applied).
+- **L2 (fixed):** each courier partner's webhook key is `HMAC-SHA256(COURIER_WEBHOOK_SECRET,
+"courier-webhook:v1:" + partnerCode)`; a signature made for one partner, or with the bare master secret,
+  is refused (401) at another partner's URL. No new configuration. A real partner adapter would use the
+  secret that partner issues.
+- **L6 (not changed, documented):** Next's CSP guide (`node_modules/next/dist/docs/01-app/02-guides/
+content-security-policy.md`) states nonces require dynamic rendering and that Partial Prerendering is
+  incompatible with nonce-based CSP; the experimental SRI option hashes script files but not the inline
+  RSC payload scripts. Removing `'unsafe-inline'` from `script-src` would mean rendering every page per
+  request. Kept; no XSS sink was found (no `dangerouslySetInnerHTML`, escaped PDF/CSV output).
+- **Trusted proxy:** unchanged at 0 (owner decision). A production server now logs a
+  `deployment_warning` at every start while it is 0. Registration keeps its shared limit (not weakened).
+- **Migrations:** reviewed; no drift; development pre-flight clean;
+  `docs/migrations/dev-migration-checklist.md` has the backup, apply, verify and rollback commands.

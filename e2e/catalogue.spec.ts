@@ -7,7 +7,7 @@ import {
   visibleField,
   watchPageProblems,
 } from './support/auth';
-import { adminOrigin } from './support/page-checks';
+import { adminOrigin, projectLetter } from './support/page-checks';
 
 // One chain per browser project: the steps build on each other (type → brand → product → variants).
 test.describe.configure({ mode: 'serial' });
@@ -38,7 +38,7 @@ function toast(page: Page, text: string) {
 }
 
 // Next 16 can keep a hidden copy of streamed or previous content; assert on what the user can see.
-function visibleText(page: Page, text: string) {
+function visibleText(page: Page, text: string | RegExp) {
   return page.getByText(text, { exact: true }).filter({ visible: true });
 }
 
@@ -59,7 +59,7 @@ async function addAttribute(
 }
 
 test.beforeAll(({}, testInfo) => {
-  suffix = `${runId}${testInfo.project.name.includes('360') ? 'm' : 'd'}`;
+  suffix = `${runId}${projectLetter(testInfo.project.name).toLowerCase()}`;
   productName = `Trail Runner ${suffix}`;
 });
 
@@ -161,8 +161,11 @@ test('a catalogue manager builds a new product type and lists a product of it wi
     await expect(toast(page, 'Image added')).toBeVisible();
     await expect(page.getByRole('img', { name: 'Side view of the trail runner' })).toBeVisible();
     await expect(visibleField(page, 'Description')).toHaveValue(unsavedDescription);
+    const versionBeforeSave = await visibleText(page, /^Version \d+$/).textContent();
     await page.getByRole('button', { name: 'Save product' }).click();
     await expect(toast(page, 'Product saved')).toBeVisible();
+    // Activation sends the version shown on the page, so wait for the refreshed one after the save.
+    await expect(visibleText(page, /^Version \d+$/)).not.toHaveText(versionBeforeSave ?? '');
   });
 
   await test.step('activate, then find the product with the list filters', async () => {

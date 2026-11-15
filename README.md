@@ -84,14 +84,15 @@ nothing on a second run.
 The JSON file is **read when the server starts** (not baked into the build), so staging and production
 can change settings with a restart instead of a rebuild. An invalid file stops the server with exit code 1.
 
-| Variable            | Required  | Example (local placeholders)                                     |
-| ------------------- | --------- | ---------------------------------------------------------------- |
-| `APP_ENV`           | yes       | `development` (also `test`, `staging`, `production`)             |
-| `APP_CONFIG_PATH`   | no        | path to a different config file, overrides `APP_ENV`'s file      |
-| `DATABASE_URL`      | yes       | `postgresql://ecommerce:ecommerce@localhost:5433/ecommerce`      |
-| `TEST_DATABASE_URL` | for tests | `postgresql://ecommerce:ecommerce@localhost:5433/ecommerce_test` |
-| `ELASTICSEARCH_URL` | yes       | `http://localhost:9200`                                          |
-| `REDIS_URL`         | yes       | `redis://localhost:6379` (`rediss://` for TLS)                   |
+| Variable                 | Required                     | Example (local placeholders)                                                                               |
+| ------------------------ | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `APP_ENV`                | yes                          | `development` (also `test`, `staging`, `production`)                                                       |
+| `APP_CONFIG_PATH`        | no                           | path to a different config file, overrides `APP_ENV`'s file                                                |
+| `DATABASE_URL`           | yes                          | `postgresql://ecommerce:ecommerce@localhost:5433/ecommerce`                                                |
+| `TEST_DATABASE_URL`      | for tests                    | `postgresql://ecommerce:ecommerce@localhost:5433/ecommerce_test`                                           |
+| `ELASTICSEARCH_URL`      | yes                          | `http://localhost:9200`                                                                                    |
+| `REDIS_URL`              | yes                          | `redis://localhost:6379` (`rediss://` for TLS)                                                             |
+| `COURIER_WEBHOOK_SECRET` | outside development and test | 32+ characters; signs and verifies `demo_courier` webhooks (development and test use a fixed local secret) |
 
 ## Tests
 
@@ -110,14 +111,93 @@ A full local run: `npm test && npm run test:integration && npm run build && npm 
 
 ## Other scripts
 
-| Command               | Purpose                                                 |
-| --------------------- | ------------------------------------------------------- |
-| `npm run dev`         | Start the app on port 3000                              |
-| `npm run typecheck`   | Generate route types and run `tsc --noEmit`             |
-| `npm run lint`        | ESLint with zero warnings allowed                       |
-| `npm run db:generate` | Regenerate the Prisma client                            |
-| `npm run db:migrate`  | Create/apply a development migration                    |
-| `npm run docs:erd`    | Regenerate `docs/er-diagram.svg` from the Prisma schema |
+| Command                        | Purpose                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| `npm run dev`                  | Start the app on port 3000                                                            |
+| `npm run typecheck`            | Generate route types and run `tsc --noEmit`                                           |
+| `npm run lint`                 | ESLint with zero warnings allowed                                                     |
+| `npm run db:generate`          | Regenerate the Prisma client                                                          |
+| `npm run db:migrate`           | Create/apply a development migration                                                  |
+| `npm run docs:erd`             | Regenerate `docs/er-diagram.svg` from the Prisma schema                               |
+| `npm run docs:openapi`         | Regenerate `docs/openapi.json` from the API route handlers (a unit test checks drift) |
+| `npm run search:sync`          | Process every queued search outbox row now (the app also does this after each change) |
+| `npm run search:reindex`       | Rebuild the Elasticsearch index with no downtime (new versioned index, alias swap)    |
+| `npm run orders:expire-unpaid` | Cancel online orders not paid within 30 minutes and release their stock               |
+
+## Demo walkthrough
+
+Store (http://store.localhost:3000):
+
+1. Browse **Categories** or search (try `kurta`), filter by brand, price, stock, rating or an attribute,
+   change the sort, page through results.
+2. Open a product, pick a size/colour (unavailable combinations are disabled), **Add to cart** or **Buy now**.
+   As a guest the cart lives in a cookie and is merged into your account when you sign in.
+3. In the cart change quantities, try coupons (`SAVE10` valid, `FLAT150` expired, `BIGSALE25` used up,
+   `WELCOME20` first order only), then **Checkout**.
+4. Pick an address and **Pay online** (simulated gateway: choose success or a decline; three declines or
+   30 minutes unpaid cancel the order) or **Cash on Delivery**; the confirmation opens the order page.
+5. **Orders** lists your orders; an order shows items, payment, per-shipment tracking and **Cancel order**
+   while nothing has shipped.
+
+Admin (http://admin.localhost:3000, `order.ops@demo-store.test` or `super.admin@demo-store.test`):
+
+1. **Orders**: search and filter, open an order, **Confirm order**, then on each shipment **Mark packed** →
+   **Create AWB** → **Download label** → **Simulate pickup scan / next scan** until delivered (COD payment
+   becomes collected). Try **Mark delivery failed** → **Return to origin** → **Receive and restock**.
+2. **Dashboard** and **Reports**: KPIs, charts, top products, stock by warehouse and the reconciliation
+   panel (report total = order rows = payment rows).
+3. **Customers**: open a customer, **Block** (signs them out, stops sign-in and checkout), **Unblock**.
+4. **Coupons**, **Settings**, **Couriers** (serviceable pincodes, webhook log), **Audit trail**.
+
+## OTP login (demo)
+
+No SMS is sent. `POST /api/store/auth/otp/request` writes the code to the server log (`otp_issued` event,
+field `issuedCode`) and, while `OTP_DISPLAY_IN_UI` is not `false`, the login page shows it in a popup
+labelled "Staging/demo: OTP is shown here because SMS is not integrated". Production sets
+`OTP_DISPLAY_IN_UI=false`: the code is then only in the server log. Codes expire after 5 minutes, lock
+after 5 wrong attempts, can be resent after 30 seconds and work once.
+
+## API documentation and staff
+
+- Swagger UI: sign in on the admin site and open **API docs** (`http://admin.localhost:3000/docs`). It is
+  generated from the route handlers (`docs/openapi.json`, `npm run docs:openapi`).
+- Staff (super admin only): **Staff** in the admin menu adds staff, changes their roles and deactivates
+  them (signed out everywhere). Nobody can change their own account, and one active super admin always
+  remains.
+
+## Known limitations
+
+- Online payment is a **simulated gateway** (no card data, no money moves; the customer picks the outcome);
+  COD is the other method. With `APP_ENV=production` the simulation is switched off and checkout offers
+  COD only, until a real gateway adapter exists. Refunds for cancelled online orders are not automated (the
+  payment stays COLLECTED and needs a manual refund).
+- OTP login codes are written to the server log (no SMS). Development, test and staging also show the code
+  in a popup (`OTP_DISPLAY_IN_UI`); production never returns it, whatever that setting says.
+- The only courier is the built-in `demo_courier` (simulated AWB, PDF label and signed webhooks).
+- Unpaid online orders are expired after checkout/order-list requests and by `npm run orders:expire-unpaid`;
+  there is no background scheduler.
+- Waves 11–13 (P1) are built: OTP login, returns/exchanges with manual refunds, invoice, packing slip,
+  label and manifest PDFs, collections, banners, branding, reviews, facet counts, pincode check,
+  re-allocation, bulk actions, staff management, CSV exports, product and pincode CSV uploads, stock
+  transfer, bulk re-categorise and search index tools.
+- Wave 16 (P2) is built: search autocomplete, a simulated order notification log (order placed, shipped,
+  delivered; nothing is sent, so there is no failed-notification history), and an optional
+  "nearest warehouse" allocation setting. "Nearest" is approximated by the shared PIN-code prefix (zone,
+  circle, sorting district), not by geographic distance: no PIN coordinates dataset is used. The default
+  is priority-based allocation.
+- Not deployed: no hosted store/admin URLs, no CI result readable here (see `IMPLEMENTATION_PROGRESS.md`).
+- Whole-order cancellation only; coupon usage is not given back when an order is cancelled.
+- Security items that need an owner decision (TD-032, TD-033): phone numbers are not verified at
+  registration, so someone could register another person's number first (proposal:
+  `docs/migrations/proposed-phone-verification.md`; changing a phone already needs the current password
+  and signs out other devices); CSP still allows inline scripts (nonces would disable static and partial
+  rendering); with no trusted proxy hop configured, client IPs are unknown, so registration shares one
+  site-wide limit and guest cart / search limits are off (production logs a warning at start).
+- Production prerequisites: `COURIER_WEBHOOK_SECRET` (per-partner keys are derived from it),
+  `authentication.trustedProxyHopCount` set to the real proxy chain, the two pending migrations applied
+  (`docs/migrations/dev-migration-checklist.md`), `OTP_DISPLAY_IN_UI` is ignored in production.
+- A customer can hold at most 2 unpaid online orders at a time (COD is not capped).
+- See `docs/REQUIREMENTS_TRACEABILITY.md` for the full limitation register.
 
 ## Documentation
 

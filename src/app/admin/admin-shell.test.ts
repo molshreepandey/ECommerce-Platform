@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { type AdminNavigationEntry, visibleNavigationItems } from './admin-shell';
+import {
+  type AdminNavigationEntry,
+  adminNavigationEntries,
+  visibleNavigationItems,
+} from './admin-shell';
 
 const entries: AdminNavigationEntry[] = [
   { label: 'Dashboard', href: '/', icon: 'layout-dashboard' },
@@ -32,5 +36,20 @@ describe('visibleNavigationItems', () => {
       href: '/orders',
       icon: 'package',
     });
+  });
+
+  it('keeps each sidebar section in one run and passes the section through', () => {
+    const allPermissions = new Set(
+      adminNavigationEntries.flatMap(({ requiredPermission }) =>
+        requiredPermission === undefined ? [] : [requiredPermission],
+      ),
+    );
+    const items = visibleNavigationItems(adminNavigationEntries, allPermissions);
+    expect(items).toHaveLength(adminNavigationEntries.length);
+    const runs = items
+      .map(({ section }) => section ?? '')
+      .filter((section, index, all) => section !== all[index - 1]);
+    expect(new Set(runs).size).toBe(runs.length);
+    expect(items.find(({ href }) => href === '/orders')?.section).toBe('Orders');
   });
 });

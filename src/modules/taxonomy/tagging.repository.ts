@@ -17,3 +17,22 @@ export async function setProductsCategory(
       updated_at = now()
     WHERE id = ANY(${ids}::uuid[])`;
 }
+
+// D21: the products a re-categorise moves (archived ones stay, as tagging refuses them).
+export async function findMovableProductIds(
+  database: DatabaseClient,
+  categoryId: string,
+  limit: number,
+): Promise<string[]> {
+  const rows = await database.product.findMany({
+    where: { categoryId, status: { not: 'ARCHIVED' } },
+    select: { id: true },
+    orderBy: { id: 'asc' },
+    take: limit,
+  });
+  return rows.map(({ id }) => id);
+}
+
+export function countArchivedOnCategory(database: DatabaseClient, categoryId: string) {
+  return database.product.count({ where: { categoryId, status: 'ARCHIVED' } });
+}

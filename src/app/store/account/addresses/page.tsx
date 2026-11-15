@@ -4,11 +4,10 @@ import { Flexbox } from '@/components/atoms/Flexbox';
 import { Heading } from '@/components/atoms/Heading';
 import { Link } from '@/components/atoms/Link';
 import { Skeleton } from '@/components/atoms/Skeleton';
-import { StoreLayout } from '@/components/layouts/StoreLayout';
 import { AddressBook } from '@/components/organisms/AddressBook';
 import { listAddresses } from '@/modules/identity/address.service';
 import { currentCustomerOrRedirect } from '@/modules/identity/current-session';
-import { storeName, storeNavigationLinks } from '../../store-shell';
+import { StorePageFrame } from '../../store-page-frame';
 
 export const metadata: Metadata = { title: 'Your addresses' };
 
@@ -19,7 +18,7 @@ async function SavedAddresses() {
 
 export default function AddressesPage() {
   return (
-    <StoreLayout storeName={storeName} navigationLinks={storeNavigationLinks}>
+    <StorePageFrame>
       <Flexbox direction="column" gap="xl">
         <Flexbox direction="column" gap="xs" align="start">
           <Link href="/account" appearance="subtle" variant="body3">
@@ -33,6 +32,6 @@ export default function AddressesPage() {
           <SavedAddresses />
         </Suspense>
       </Flexbox>
-    </StoreLayout>
+    </StorePageFrame>
   );
 }

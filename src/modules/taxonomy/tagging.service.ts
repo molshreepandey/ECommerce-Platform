@@ -6,9 +6,17 @@ import { assertStaffPermission } from '@/modules/identity/access-control';
 import { enqueueProductsReindex } from '@/modules/search/search-outbox.repository';
 
 import { type CategoryRow, countChildren, lockCategoryForShare } from './category.repository';
-import { setProductsCategory } from './tagging.repository';
+import {
+  countArchivedOnCategory,
+  findMovableProductIds,
+  setProductsCategory,
+} from './tagging.repository';
 import { taxonomyErrors } from './taxonomy.errors';
-import type { TagProductsInput } from './taxonomy.schema';
+import {
+  maximumProductsPerRecategorise,
+  type RecategoriseProductsInput,
+  type TagProductsInput,
+} from './taxonomy.schema';
 
 export interface TaggingResult {
   changedProductIds: string[];
@@ -66,6 +74,67 @@ export async function tagProducts(
       unchangedProductIds: products
         .filter(({ id }) => !changedIds.includes(id))
         .map(({ id }) => id),
+    };
+  });
+}
+
+export interface RecategoriseResult {
+  movedProductIds: string[];
+  archivedProductCount: number;
+}
+
+// D21: move every non-archived product on category A to the active leaf category B, all or nothing.
+// Both categories are share-locked in id order (so neither can be deleted or restructured meanwhile),
+// then the products in id order, the same lock order as tagging. Archived products stay on A (tagging
+// refuses them) and are counted in the result.
+export async function recategoriseProducts(
+  actor: CatalogueActor,
+  input: RecategoriseProductsInput,
+): Promise<RecategoriseResult> {
+  assertStaffPermission(actor.staff, 'taxonomy.write');
+  return await getDatabase().$transaction(async (transaction) => {
+    for (const categoryId of [input.fromCategoryId, input.toCategoryId].sort()) {
+      if (categoryId === input.toCategoryId) await lockTargetLeaf(transaction, categoryId);
+      else if ((await lockCategoryForShare(transaction, categoryId)) === null)
+        throw taxonomyErrors.categoryNotFound();
+    }
+    const productIds = await findMovableProductIds(
+      transaction,
+      input.fromCategoryId,
+      maximumProductsPerRecategorise + 1,
+    );
+    if (productIds.length > maximumProductsPerRecategorise) {
+      throw taxonomyErrors.tooManyToRecategorise(productIds.length, maximumProductsPerRecategorise);
+    }
+    // A product re-tagged or archived between the read and its lock is left alone.
+    const moving = (await lockProductsInIdOrder(transaction, productIds)).filter(
+      (product) => product.categoryId === input.fromCategoryId && product.status !== 'ARCHIVED',
+    );
+    const movedIds = moving.map(({ id }) => id);
+    await setProductsCategory(transaction, {
+      productIds: movedIds,
+      categoryId: input.toCategoryId,
+    });
+    await recordCatalogueEvents(transaction, actor, [
+      ...moving.map((product) => ({
+        action: 'taxonomy.product_tagged' as const,
+        entityType: 'product' as const,
+        entityId: product.id,
+        before: { categoryId: input.fromCategoryId },
+        after: { categoryId: input.toCategoryId },
+      })),
+      {
+        action: 'taxonomy.products_recategorised' as const,
+        entityType: 'category' as const,
+        entityId: input.fromCategoryId,
+        before: { categoryId: input.fromCategoryId },
+        after: { categoryId: input.toCategoryId, productCount: movedIds.length },
+      },
+    ]);
+    await enqueueProductsReindex(transaction, movedIds);
+    return {
+      movedProductIds: movedIds,
+      archivedProductCount: await countArchivedOnCategory(transaction, input.fromCategoryId),
     };
   });
 }

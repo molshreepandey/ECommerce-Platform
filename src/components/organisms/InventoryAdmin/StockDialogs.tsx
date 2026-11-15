@@ -15,6 +15,7 @@ import {
   receiveStockSchema,
   setLowStockThresholdSchema,
   stockAdjustmentSchema,
+  transferStockSchema,
 } from '@/modules/inventory/inventory.schema';
 import type { IdempotencyKeeper } from './idempotency-key';
 import { InventoryFailure, useInventoryAction } from './inventory-actions';
@@ -370,6 +371,166 @@ export function ReceiveStockDialog({
                 error={fieldErrors[`quantity-${variant.variantId}`]}
               />
             ))}
+          </div>
+        </fieldset>
+      </form>
+    </Modal>
+  );
+}
+
+// D27: move available units of one product's variants between two warehouses, all or nothing. Reserved
+// units never move (the API answers 409 with the available quantity).
+export function TransferStockDialog({
+  product,
+  warehouses,
+  defaultWarehouseId,
+  keeper,
+  onClose,
+}: Readonly<{
+  product: StockProductView;
+  warehouses: readonly WarehouseChoice[];
+  defaultWarehouseId: string;
+  keeper: IdempotencyKeeper;
+  onClose: () => void;
+}>) {
+  const formId = 'transfer-stock-form';
+  const { run, isPending, failure, clearFailure } = useInventoryAction();
+  const [fromWarehouseId, setFromWarehouseId] = useState(defaultWarehouseId);
+  const [toWarehouseId, setToWarehouseId] = useState(
+    warehouses.find((warehouse) => warehouse.id !== defaultWarehouseId)?.id ?? '',
+  );
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [linesError, setLinesError] = useState<string | null>(null);
+  const availableAt = (variant: StockVariantView) =>
+    variant.levels.find((level) => level.warehouseId === fromWarehouseId)?.availableQuantity;
+
+  async function submit(text: (name: string) => string) {
+    const errors: Record<string, string> = {};
+    const lines: { variantId: string; quantity: number }[] = [];
+    for (const variant of product.variants) {
+      const entered = text(`quantity-${variant.variantId}`).trim();
+      if (entered === '') continue;
+      const quantity = wholeNumber(entered);
+      if (typeof quantity !== 'number' || quantity < 1 || quantity > maximumStockQuantity) {
+        errors[`quantity-${variant.variantId}`] =
+          `Enter a whole number from 1 to ${formatQuantity(maximumStockQuantity)}`;
+        continue;
+      }
+      lines.push({ variantId: variant.variantId, quantity });
+    }
+    const parsed = transferStockSchema.safeParse({
+      fromWarehouseId,
+      toWarehouseId,
+      reason: text('reason'),
+      lines,
+    });
+    const schemaErrors = parsed.success
+      ? {}
+      : firstMessages(z.flattenError(parsed.error).fieldErrors);
+    setFieldErrors({ ...schemaErrors, ...errors });
+    setLinesError(
+      lines.length === 0 && Object.keys(errors).length === 0
+        ? 'Enter a quantity for at least one variant.'
+        : (schemaErrors['lines'] ?? null),
+    );
+    if (!parsed.success || Object.keys(errors).length > 0) return;
+    const saved = await run(
+      {
+        url: '/api/admin/inventory/transfers',
+        method: 'POST',
+        body: parsed.data,
+        idempotencyKey: keeper.keyFor(parsed.data),
+      },
+      'Stock transferred',
+    );
+    if (saved === null) return;
+    keeper.forget(parsed.data);
+    onClose();
+  }
+
+  return (
+    <Modal
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+      title={`Transfer stock: ${product.productName}`}
+      description="Only available units move; units reserved for orders stay where they are."
+      size="lg"
+      footer={
+        <DialogFooter
+          formId={formId}
+          label="Transfer stock"
+          isPending={isPending}
+          onCancel={onClose}
+        />
+      }
+    >
+      <form
+        id={formId}
+        noValidate
+        className="flex flex-col gap-md"
+        onSubmit={(event: SubmitEvent<HTMLFormElement>) => {
+          event.preventDefault();
+          void submit(formReader(event.currentTarget));
+        }}
+      >
+        <InventoryFailure failure={failure} />
+        <div className="grid grid-cols-1 gap-sm sm:grid-cols-2">
+          <SelectField
+            label="From warehouse"
+            name="fromWarehouseId"
+            options={warehouseOptions(warehouses)}
+            value={fromWarehouseId}
+            onValueChange={(value) => {
+              clearFailure();
+              setFromWarehouseId(value);
+            }}
+            error={fieldErrors['fromWarehouseId']}
+          />
+          <SelectField
+            label="To warehouse"
+            name="toWarehouseId"
+            options={warehouseOptions(warehouses)}
+            value={toWarehouseId}
+            onValueChange={(value) => {
+              clearFailure();
+              setToWarehouseId(value);
+            }}
+            error={fieldErrors['toWarehouseId']}
+          />
+        </div>
+        <FormField
+          label="Reason"
+          name="reason"
+          hint="Why the stock moves, for example: rebalance before the festive sale."
+          error={fieldErrors['reason']}
+          autoComplete="off"
+        />
+        <fieldset className="flex flex-col gap-sm">
+          <legend className="mb-xs text-body3-medium text-headings">Quantities to move</legend>
+          {linesError === null ? null : <InlineAlert tone="danger">{linesError}</InlineAlert>}
+          <div className="grid grid-cols-1 gap-sm sm:grid-cols-2">
+            {product.variants.map((variant) => {
+              const available = availableAt(variant);
+              return (
+                <FormField
+                  key={variant.variantId}
+                  label={variant.sku}
+                  name={`quantity-${variant.variantId}`}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={maximumStockQuantity}
+                  hint={
+                    available === undefined
+                      ? 'Available here: not loaded on this page'
+                      : `Available here: ${formatQuantity(available)}`
+                  }
+                  error={fieldErrors[`quantity-${variant.variantId}`]}
+                />
+              );
+            })}
           </div>
         </fieldset>
       </form>

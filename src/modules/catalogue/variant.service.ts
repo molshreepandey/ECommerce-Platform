@@ -66,7 +66,7 @@ function variantAuditData(variant: VariantRow): AuditData {
   };
 }
 
-function rethrowVariantConflict(
+export function rethrowVariantConflict(
   error: unknown,
   input: { sku?: string; optionSignature?: string },
 ): never {
@@ -112,6 +112,42 @@ async function finishVariantChange(
   return productVersion;
 }
 
+// The variant insert under the product lock, with validation, audit, version bump and search update,
+// inside the caller's transaction (shared by the variant form and the bulk CSV import, D16). Reports
+// the option signature it computed so the caller can name a duplicate combination.
+export async function createVariantInTransaction(
+  transaction: DatabaseClient,
+  actor: CatalogueActor,
+  productId: string,
+  input: CreateVariantInput,
+  onSignature: (signature: string) => void = () => undefined,
+): Promise<VariantChangeResult> {
+  const locked = await lockUnarchivedProduct(transaction, productId);
+  const rules = await rulesUnderTypeLock(transaction, locked.productTypeId);
+  const optionValues = validOptions(rules, input.optionValues);
+  const signature = optionSignature(optionValues);
+  onSignature(signature);
+  const variant = await insertVariant(transaction, productId, {
+    sku: input.sku,
+    optionValues,
+    optionSignature: signature,
+    mrpPaise: input.mrpPaise,
+    pricePaise: input.pricePaise,
+    weightGrams: input.weightGrams,
+    lengthMm: input.lengthMm,
+    breadthMm: input.breadthMm,
+    heightMm: input.heightMm,
+  });
+  const productVersion = await finishVariantChange(transaction, actor, {
+    productId,
+    action: 'catalogue.variant_created',
+    entityType: 'product_variant',
+    entityId: variant.id,
+    after: variantAuditData(variant),
+  });
+  return { variant, productVersion };
+}
+
 export async function createVariant(
   actor: CatalogueActor,
   productId: string,
@@ -120,31 +156,11 @@ export async function createVariant(
   assertStaffPermission(actor.staff, 'catalogue.write');
   let signature: string | undefined;
   try {
-    return await getDatabase().$transaction(async (transaction) => {
-      const locked = await lockUnarchivedProduct(transaction, productId);
-      const rules = await rulesUnderTypeLock(transaction, locked.productTypeId);
-      const optionValues = validOptions(rules, input.optionValues);
-      signature = optionSignature(optionValues);
-      const variant = await insertVariant(transaction, productId, {
-        sku: input.sku,
-        optionValues,
-        optionSignature: signature,
-        mrpPaise: input.mrpPaise,
-        pricePaise: input.pricePaise,
-        weightGrams: input.weightGrams,
-        lengthMm: input.lengthMm,
-        breadthMm: input.breadthMm,
-        heightMm: input.heightMm,
-      });
-      const productVersion = await finishVariantChange(transaction, actor, {
-        productId,
-        action: 'catalogue.variant_created',
-        entityType: 'product_variant',
-        entityId: variant.id,
-        after: variantAuditData(variant),
-      });
-      return { variant, productVersion };
-    });
+    return await getDatabase().$transaction((transaction) =>
+      createVariantInTransaction(transaction, actor, productId, input, (computed) => {
+        signature = computed;
+      }),
+    );
   } catch (error) {
     rethrowVariantConflict(error, {
       sku: input.sku,

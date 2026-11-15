@@ -13,9 +13,11 @@ import type {
   ListMovementsInput,
   ListStockLevelsInput,
 } from './inventory.schema';
+import type { AllocatableStock } from './allocation';
 import {
   availableQuantitiesByVariant,
   countLowStockRows,
+  findAllocatableStockRows,
   lowStockPage,
   movementCursorExists,
   movementLabels,
@@ -251,4 +253,21 @@ export async function findAvailabilityForVariants(
   const ids = [...new Set(variantIds.map((variantId) => variantId.toLowerCase()))];
   const available = await availableQuantitiesByVariant(database, ids);
   return new Map(ids.map((variantId) => [variantId, available.get(variantId) ?? 0]));
+}
+
+// Checkout allocation input: available stock per variant and active warehouse, with the warehouse priority.
+export async function findAllocatableStock(
+  database: DatabaseClient,
+  variantIds: readonly string[],
+): Promise<AllocatableStock[]> {
+  const rows = await findAllocatableStockRows(database, [
+    ...new Set(variantIds.map((variantId) => variantId.toLowerCase())),
+  ]);
+  return rows.map((row) => ({
+    variantId: row.variantId,
+    warehouseId: row.warehouseId,
+    warehousePriority: row.warehouse.priority,
+    warehousePincode: row.warehouse.pincode,
+    availableQuantity: row.availableQuantity,
+  }));
 }

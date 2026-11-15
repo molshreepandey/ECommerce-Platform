@@ -80,3 +80,7 @@ export class TransactionTimeoutError extends DomainError {
     return { 'Retry-After': '1' };
   }
 }
+
+export function isNotFoundError(error: unknown): boolean {
+  return error instanceof DomainError && error.kind === 'NOT_FOUND';
+}

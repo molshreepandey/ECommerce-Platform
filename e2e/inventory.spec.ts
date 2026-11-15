@@ -7,7 +7,7 @@ import {
   visibleField,
   watchPageProblems,
 } from './support/auth';
-import { adminOrigin } from './support/page-checks';
+import { adminOrigin, projectLetter } from './support/page-checks';
 
 // Admin inventory UI (Wave 5 step 4). One chain per browser project (desktop and 360 px): a super admin
 // prepares a product with two variants through the API, then an inventory manager works through the UI.
@@ -72,7 +72,7 @@ async function openStock(page: Page) {
 }
 
 test.beforeAll(async ({ browser }, testInfo) => {
-  suffix = `${runId}${testInfo.project.name.includes('360') ? 'M' : 'D'}`;
+  suffix = `${runId}${projectLetter(testInfo.project.name)}`;
   skuSmall = `INV-${suffix}-S`;
   skuMedium = `INV-${suffix}-M`;
   productName = `Inventory Kurta ${suffix}`;

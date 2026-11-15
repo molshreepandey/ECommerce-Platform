@@ -1,7 +1,11 @@
 import type { Metadata } from 'next';
 import { Suspense } from 'react';
+import { ButtonLink } from '@/components/atoms/Button';
 import { Flexbox } from '@/components/atoms/Flexbox';
+import { Heading } from '@/components/atoms/Heading';
+import { CsvUploadForm } from '@/components/organisms/AdminActions/CsvUploadForm';
 import { AttributeDefinitionManager } from '@/components/organisms/CatalogueAdmin';
+import { productCsvColumns } from '@/modules/catalogue/product-import.service';
 import type { StaffContext } from '@/modules/identity/access-control';
 import { getProductType } from '@/modules/catalogue/product-type.service';
 import { AdminPageFrame, AdminPageLoading } from '../../admin-page-frame';
@@ -42,6 +46,31 @@ async function ProductTypeDetail({
         definitions={productType.attributeDefinitions}
         canWrite={canWrite}
       />
+      <section aria-labelledby="bulk-products-heading" className="flex flex-col gap-md">
+        <Heading level={2} variant="heading5" id="bulk-products-heading">
+          Products by CSV
+        </Heading>
+        <div>
+          <ButtonLink
+            size="sm"
+            iconBefore="arrow-down"
+            href={`/api/admin/product-types/${productType.id}/products/export`}
+            prefetch={false}
+            download
+          >
+            Export products (also the upload template)
+          </ButtonLink>
+        </div>
+        {canWrite ? (
+          <CsvUploadForm
+            url={`/api/admin/product-types/${productType.id}/products/import`}
+            label="Products CSV"
+            columns={productCsvColumns(
+              productType.attributeDefinitions.filter(({ archivedAt }) => archivedAt === null),
+            )}
+          />
+        ) : null}
+      </section>
     </Flexbox>
   );
 }

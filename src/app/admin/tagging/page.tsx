@@ -4,7 +4,7 @@ import { Flexbox } from '@/components/atoms/Flexbox';
 import { Link } from '@/components/atoms/Link';
 import { Text } from '@/components/atoms/Text';
 import { ReadOnlyNotice } from '@/components/organisms/CatalogueAdmin';
-import { TaggingQueue } from '@/components/organisms/TaxonomyAdmin';
+import { RecategoriseForm, TaggingQueue } from '@/components/organisms/TaxonomyAdmin';
 import { listProductsSchema } from '@/modules/catalogue/catalogue.schema';
 import { listProducts } from '@/modules/catalogue/product.service';
 import type { StaffContext } from '@/modules/identity/access-control';
@@ -35,6 +35,10 @@ async function Queue({
     listCategoryTree(staff),
   ]);
   const labels = categoryNameLabels(tree);
+  const leafCategories = tree
+    .filter(({ childCount, isActive }) => childCount === 0 && isActive)
+    .map(({ id }) => ({ id, label: labels.get(id) ?? id }))
+    .sort((left, right) => left.label.localeCompare(right.label));
   const nextQuery =
     page.nextCursor === null
       ? null
@@ -46,6 +50,19 @@ async function Queue({
   return (
     <Flexbox direction="column" gap="lg" align="stretch">
       <ReadOnlyNotice canWrite={canWrite} />
+      {canWrite ? (
+        <RecategoriseForm
+          sources={tree
+            .filter(({ directProductCount }) => directProductCount > 0)
+            .map(({ id, directProductCount }) => ({
+              id,
+              label: labels.get(id) ?? id,
+              productCount: directProductCount,
+            }))
+            .sort((left, right) => left.label.localeCompare(right.label))}
+          targets={leafCategories}
+        />
+      ) : null}
       <Text variant="body3" tone="muted">
         {page.totalCount} {taggingStatus === 'UNTAGGED' ? 'untagged' : 'tagged'}{' '}
         {page.totalCount === 1 ? 'product' : 'products'}
@@ -57,10 +74,7 @@ async function Queue({
           status: item.status,
           categoryLabel: item.categoryId === null ? null : (labels.get(item.categoryId) ?? null),
         }))}
-        leafCategories={tree
-          .filter(({ childCount, isActive }) => childCount === 0 && isActive)
-          .map(({ id }) => ({ id, label: labels.get(id) ?? id }))
-          .sort((left, right) => left.label.localeCompare(right.label))}
+        leafCategories={leafCategories}
         taggingStatus={taggingStatus}
         search={search}
         canWrite={canWrite}

@@ -48,7 +48,7 @@ import {
 } from './product.repository';
 import { slugFromName } from './slug';
 
-function rethrowProductConflict(error: unknown): never {
+export function rethrowProductConflict(error: unknown): never {
   if (isUniqueViolation(error) && uniqueViolationConstraintName(error) === 'products_slug_key') {
     throw catalogueConflicts.productSlugTaken();
   }
@@ -143,6 +143,34 @@ export async function listProducts(
   };
 }
 
+// The product insert with its validation, audit row and search update, inside the caller's transaction
+// (shared by the create form and the bulk CSV import, D16). `slug` is already resolved.
+export async function createProductInTransaction(
+  transaction: DatabaseClient,
+  actor: CatalogueActor,
+  input: CreateProductInput & { slug: string },
+): Promise<ProductSummary> {
+  const attributes = await validatedAttributes(transaction, input.productTypeId, input.attributes);
+  await assertActiveBrand(transaction, input.brandId);
+  const product = await insertProduct(transaction, {
+    productTypeId: input.productTypeId,
+    brandId: input.brandId,
+    name: input.name,
+    slug: input.slug,
+    description: input.description,
+    attributes,
+    taxRateBasisPoints: input.taxRateBasisPoints,
+  });
+  await recordCatalogueEvent(transaction, actor, {
+    action: 'catalogue.product_created',
+    entityType: 'product',
+    entityId: product.id,
+    after: productAuditData(product),
+  });
+  await enqueueProductReindex(transaction, product.id);
+  return product;
+}
+
 export async function createProduct(
   actor: CatalogueActor,
   input: CreateProductInput,
@@ -151,31 +179,9 @@ export async function createProduct(
   const slug = input.slug ?? slugFromName(input.name);
   if (slug === '') throw new CatalogueValidationError({ slug: ['Enter a slug'] });
   try {
-    return await getDatabase().$transaction(async (transaction) => {
-      const attributes = await validatedAttributes(
-        transaction,
-        input.productTypeId,
-        input.attributes,
-      );
-      await assertActiveBrand(transaction, input.brandId);
-      const product = await insertProduct(transaction, {
-        productTypeId: input.productTypeId,
-        brandId: input.brandId,
-        name: input.name,
-        slug,
-        description: input.description,
-        attributes,
-        taxRateBasisPoints: input.taxRateBasisPoints,
-      });
-      await recordCatalogueEvent(transaction, actor, {
-        action: 'catalogue.product_created',
-        entityType: 'product',
-        entityId: product.id,
-        after: productAuditData(product),
-      });
-      await enqueueProductReindex(transaction, product.id);
-      return product;
-    });
+    return await getDatabase().$transaction((transaction) =>
+      createProductInTransaction(transaction, actor, { ...input, slug }),
+    );
   } catch (error) {
     rethrowProductConflict(error);
   }

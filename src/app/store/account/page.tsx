@@ -6,12 +6,11 @@ import { Heading } from '@/components/atoms/Heading';
 import { Link } from '@/components/atoms/Link';
 import { Skeleton } from '@/components/atoms/Skeleton';
 import { Text } from '@/components/atoms/Text';
-import { StoreLayout } from '@/components/layouts/StoreLayout';
 import { AccountSessionActions } from '@/components/organisms/AccountSessionActions';
 import { ProfileForm } from '@/components/organisms/ProfileForm';
 import { getCustomerProfile } from '@/modules/identity/customer-account.service';
 import { currentCustomerOrRedirect } from '@/modules/identity/current-session';
-import { storeName, storeNavigationLinks } from '../store-shell';
+import { StorePageFrame } from '../store-page-frame';
 
 export const metadata: Metadata = { title: 'Your account' };
 
@@ -51,7 +50,7 @@ async function AccountDetails() {
 
 export default function AccountPage() {
   return (
-    <StoreLayout storeName={storeName} navigationLinks={storeNavigationLinks}>
+    <StorePageFrame>
       <Flexbox direction="column" gap="xl">
         <Heading level={1} variant="heading2">
           Your account
@@ -60,6 +59,6 @@ export default function AccountPage() {
           <AccountDetails />
         </Suspense>
       </Flexbox>
-    </StoreLayout>
+    </StorePageFrame>
   );
 }

@@ -60,3 +60,21 @@ export class PhoneAlreadyRegisteredError extends DomainError {
     });
   }
 }
+
+// M2: changing the phone (an OTP login key) needs the current password.
+export const profileErrors = {
+  currentPasswordRequired: () =>
+    new DomainError({
+      kind: 'VALIDATION',
+      code: 'CURRENT_PASSWORD_REQUIRED',
+      message: 'Enter your current password to change your mobile number.',
+      details: { fieldErrors: { currentPassword: ['Enter your current password'] } },
+    }),
+  currentPasswordIncorrect: () =>
+    new DomainError({
+      kind: 'VALIDATION',
+      code: 'CURRENT_PASSWORD_INCORRECT',
+      message: 'The current password is not correct.',
+      details: { fieldErrors: { currentPassword: ['The current password is not correct'] } },
+    }),
+};

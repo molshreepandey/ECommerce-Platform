@@ -294,7 +294,30 @@ async function seedOrderItems(
   placedAt: Date,
 ): Promise<void> {
   for (const line of lines) {
+    const snapshot = await client.productVariant.findUniqueOrThrow({
+      where: { id: line.variant.id },
+      select: {
+        weightGrams: true,
+        lengthMm: true,
+        breadthMm: true,
+        heightMm: true,
+        product: {
+          select: {
+            productGroupId: true,
+            category: { select: { id: true, name: true, path: true } },
+          },
+        },
+      },
+    });
     const itemFields = {
+      weightGrams: snapshot.weightGrams,
+      lengthMm: snapshot.lengthMm,
+      breadthMm: snapshot.breadthMm,
+      heightMm: snapshot.heightMm,
+      categoryId: snapshot.product.category?.id ?? null,
+      categoryPath: snapshot.product.category?.path ?? null,
+      categoryName: snapshot.product.category?.name ?? null,
+      productGroupId: snapshot.product.productGroupId,
       variantId: line.variant.id,
       productId: line.variant.productId,
       productName: line.variant.productName,

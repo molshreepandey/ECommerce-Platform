@@ -1,3 +1,4 @@
+import type NextLink from 'next/link';
 import type { ComponentPropsWithRef } from 'react';
 import type { IconName } from '../Icon';
 
@@ -10,6 +11,17 @@ export type ButtonProps = Omit<ComponentPropsWithRef<'button'>, 'className' | 's
   size?: ButtonSize;
   isFullWidth?: boolean;
   isLoading?: boolean;
+  iconBefore?: IconName;
+  iconAfter?: IconName;
+};
+
+export type ButtonLinkProps = Omit<
+  ComponentPropsWithRef<typeof NextLink>,
+  'className' | 'style'
+> & {
+  appearance?: ButtonAppearance;
+  size?: ButtonSize;
+  isFullWidth?: boolean;
   iconBefore?: IconName;
   iconAfter?: IconName;
 };

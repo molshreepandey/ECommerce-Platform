@@ -100,6 +100,12 @@ enum OrderStatus {
 
 enum PaymentMethod {
   COD
+  ONLINE
+}
+
+enum PaymentAttemptOutcome {
+  SUCCEEDED
+  DECLINED
 }
 
 enum PaymentStatus {
@@ -171,6 +177,7 @@ model Customer {
   reviews           Review[]
   returnRequests    ReturnRequest[]
 
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("customers")
 }
 
@@ -423,6 +430,7 @@ model ProductVariant {
   inventoryMovements  InventoryMovement[]
   cartItems           CartItem[]
   orderItems          OrderItem[]
+  orderItemsByProduct OrderItem[]         @relation("OrderItemProductVariant")
   exchangeReturnItems ReturnRequestItem[]
 
   @@unique([productId, optionSignature])
@@ -787,11 +795,22 @@ model OrderItem {
   taxRateBasisPoints Int      @map("tax_rate_basis_points")
   taxPaise           Int      @map("tax_paise")
   lineTotalPaise     Int      @map("line_total_paise")
+  weightGrams        Int      @map("weight_grams")
+  lengthMm           Int      @map("length_mm")
+  breadthMm          Int      @map("breadth_mm")
+  heightMm           Int      @map("height_mm")
+  // Snapshots (L31), deliberately without foreign keys: later re-tagging or regrouping never changes them.
+  categoryId         String?  @map("category_id") @db.Uuid
+  categoryPath       String?  @map("category_path")
+  categoryName       String?  @map("category_name")
+  productGroupId     String?  @map("product_group_id") @db.Uuid
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   order              Order               @relation(fields: [orderId], references: [id], onDelete: Restrict)
   variant            ProductVariant      @relation(fields: [variantId], references: [id], onDelete: Restrict)
   product            Product             @relation(fields: [productId], references: [id], onDelete: Restrict)
+  // L22: the variant must belong to the line's product.
+  productVariant     ProductVariant      @relation("OrderItemProductVariant", fields: [productId, variantId], references: [productId, id], onDelete: Restrict, onUpdate: Restrict, map: "order_items_product_id_variant_id_fkey")
   shipmentItems      ShipmentItem[]
   review             Review?
   returnRequestItems ReturnRequestItem[]
@@ -833,9 +852,30 @@ model Payment {
   createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt     DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order    Order            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  attempts PaymentAttempt[]
 
+  @@index([status, collectedAt])
   @@map("payments")
+}
+
+model PaymentAttempt {
+  id                 String                @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  paymentId          String                @map("payment_id") @db.Uuid
+  idempotencyKey     String                @map("idempotency_key")
+  requestFingerprint String                @map("request_fingerprint") @db.Char(64)
+  outcome            PaymentAttemptOutcome
+  declineCode        String?               @map("decline_code")
+  providerReference  String                @unique @map("provider_reference")
+  amountPaise        Int                   @map("amount_paise")
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, idempotencyKey])
+  @@unique([paymentId], map: "payment_attempts_one_success_per_payment", where: raw("(outcome = 'SUCCEEDED'::\"PaymentAttemptOutcome\")"))
+  @@index([paymentId, createdAt])
+  @@map("payment_attempts")
 }
 
 // ───────────────────────────── fulfilment ─────────────────────────────
@@ -902,6 +942,7 @@ model Shipment {
 
   @@index([orderId])
   @@index([warehouseId, status])
+  @@index([warehouseId, shippedAt])
   @@index([courierPartnerId, status])
   @@map("shipments")
 }
@@ -951,6 +992,7 @@ model CourierWebhookReceipt {
   courierPartner CourierPartner @relation(fields: [courierPartnerId], references: [id], onDelete: Restrict)
 
   @@unique([courierPartnerId, providerEventId])
+  @@index([receivedAt(sort: Desc), id(sort: Desc)])
   @@map("courier_webhook_receipts")
 }
 

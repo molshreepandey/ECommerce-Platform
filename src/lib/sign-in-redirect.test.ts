@@ -53,3 +53,25 @@ describe('signInRedirectPath on the admin site', () => {
     ).toBeNull();
   });
 });
+
+describe('checkout and orders need sign-in', () => {
+  it.each(['/checkout', '/orders', '/orders/0195f0a0-0000-7000-8000-000000000001/pay'])(
+    'redirects %s to sign-in without a session cookie',
+    (pathname) => {
+      expect(
+        signInRedirectPath({ surface: 'store', pathname, search: '', hasSessionCookie: false }),
+      ).toBe(`/login?next=${encodeURIComponent(pathname)}`);
+    },
+  );
+
+  it('leaves the cart open to guests', () => {
+    expect(
+      signInRedirectPath({
+        surface: 'store',
+        pathname: '/cart',
+        search: '',
+        hasSessionCookie: false,
+      }),
+    ).toBeNull();
+  });
+});

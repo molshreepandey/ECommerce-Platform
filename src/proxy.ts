@@ -1,11 +1,13 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { classifyDynamicRoute } from '@/lib/dynamic-route-check';
 import { decideHostRouting } from '@/lib/host-routing';
 import { REQUEST_ID_HEADER, SURFACE_HEADER } from '@/lib/request-headers';
 import { buildRuntimeSecurityHeaders } from '@/lib/security-headers';
 import { sessionCookieName } from '@/lib/session-cookie';
 import { signInRedirectPath } from '@/lib/sign-in-redirect';
+import { isMissingStorefrontPage } from '@/modules/storefront/storefront-route-check.service';
 
 const safeRequestIdPattern = /^[A-Za-z0-9-]{8,64}$/;
 const unknownHostContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
@@ -25,7 +27,7 @@ function notFoundResponse(pathname: string): NextResponse {
   return new NextResponse('Not found', { status: 404 });
 }
 
-export function proxy(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   const config = getConfig();
   const { surfaces } = config;
   const { pathname } = request.nextUrl;
@@ -75,7 +77,13 @@ export function proxy(request: NextRequest): NextResponse {
   }
 
   const rewrittenUrl = request.nextUrl.clone();
-  rewrittenUrl.pathname = decision.pathname;
+  // A detail URL that cannot be shown is rewritten to a path no route matches, so the surface's
+  // not-found page renders with a real 404 (the page itself would already have sent a 200 shell).
+  rewrittenUrl.pathname = (await isMissingStorefrontPage(
+    classifyDynamicRoute(decision.surface, pathname),
+  ))
+    ? `/${decision.surface}/__not-found`
+    : decision.pathname;
   return withHeaders(
     NextResponse.rewrite(rewrittenUrl, { request: { headers: forwardedHeaders } }),
     securityHeaders,

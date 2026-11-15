@@ -50,7 +50,7 @@ function NotFoundLoadingFallback() {
 
 export default function GlobalNotFoundPage() {
   return (
-    <html lang="en" className={GeistSans.variable}>
+    <html lang="en-IN" className={GeistSans.variable}>
       <body className="bg-background font-sans text-headings antialiased">
         <Suspense fallback={<NotFoundLoadingFallback />}>
           <SurfaceNotFoundView />

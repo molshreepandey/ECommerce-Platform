@@ -1,11 +1,10 @@
 # Architecture
 
-Status: Waves 1–4 are built (foundation, platform, identity and audit, catalogue, categories, tagging and
-product groups). Wave 5 is in progress: the inventory ledger migrations, the inventory services and the
-admin inventory API (step 3, TD-020), the admin inventory pages (step 4, TD-021) and the internal dispatch and
-restock functions (step 5, TD-022) are in place. Business modules
-live in `src/modules/<name>/` as `*.service.ts` (transactions, rules) over `*.repository.ts` (Prisma
-only); route handlers in `src/app/api/` stay thin.
+Status (2026-11-14): Waves 1–5 are built and committed. Waves 6–10 (storefront, cart and pricing,
+checkout with COD and a simulated online gateway, fulfilment and courier, customers, reports and audit) are
+built in the working tree and awaiting owner review (TD-023 to TD-026). Business modules live in
+`src/modules/<name>/` as `*.service.ts` (transactions, rules) over `*.repository.ts` (Prisma only); route
+handlers in `src/app/api/` stay thin.
 
 ## Big picture
 
@@ -68,6 +67,48 @@ APP_CONFIG_PATH (optional override) ─────────────┼�
 | Elasticsearch | `elasticsearch:9.5.5`       | `127.0.0.1:9200` | search read model (used from Wave 6)                            |
 | Redis         | `redis:8.10.3@sha256:1f88…` | `127.0.0.1:6379` | cache and rate limits; no persistence; 128 MB, `volatile-lru`   |
 
+- **Storefront and search (`src/modules/search`, `src/modules/storefront`, Wave 6).** Elasticsearch
+  `products_v<n>` behind the alias, fed by the PostgreSQL outbox after each response (`after()`) and by
+  `npm run search:sync`; any Elasticsearch failure falls back to a PostgreSQL search for 5 seconds. The
+  category tree, product pages and attribute labels are `'use cache: remote'` entries in Redis, expired by
+  tag after each committed change (fail open to PostgreSQL).
+- **Cart and pricing (`src/modules/cart`, `src/modules/pricing`, Wave 7, TD-023).** Saved cart per
+  customer, guest cart in an httpOnly cookie merged on sign-in. Pure pricing functions (GST-inclusive tax
+  component per line, proportional coupon allocation, free-shipping threshold after the coupon, COD fee
+  for COD only) in integer paise. Coupons and store settings with audit.
+- **Ordering and payment (`src/modules/ordering`, `src/modules/payment`, Waves 8–9, TD-024, TD-025).**
+  Checkout runs in one transaction in the TD-019 lock order: cart row → (coupon guarded increment) → order
+  insert (`ON CONFLICT` on the idempotency key) → shipments → stock reservation. Order and shipment state
+  machines are typed tables with guarded `UPDATE … WHERE status = <from>`; the order status is recomputed
+  from its shipments in the same transaction, together with the COD payment rules. The simulated online
+  gateway records one attempt per `Idempotency-Key`, at most one success per payment.
+- **Fulfilment (`src/modules/fulfilment`, Wave 9).** `CourierProvider` interface with the `demo_courier`
+  adapter (deterministic AWB, PDF label, HMAC-signed webhooks); courier calls never run inside a
+  transaction (AWB_PENDING first). Webhooks are deduplicated by `(courier, event id)`.
+- **Reporting and audit (`src/modules/reporting`, `src/modules/audit`, Wave 10, TD-026).** Aggregate SQL
+  over indexed date ranges in IST; reconciliation compares the daily report total, the order rows and
+  the payment rows. The audit trail pages by uuidv7 id (time-ordered) on the primary key.
+
+## Order flow
+
+```mermaid
+sequenceDiagram
+  participant Customer
+  participant Store as Store API
+  participant DB as PostgreSQL
+  participant Staff
+  participant Courier as demo_courier
+  Customer->>Store: POST /api/store/checkout (Idempotency-Key)
+  Store->>DB: one transaction: lock cart, re-price, allocate, insert order + shipments + payment, reserve stock, empty cart
+  Customer->>Store: POST /orders/:id/payments (online only)
+  Staff->>DB: confirm, pack
+  Staff->>DB: AWB_PENDING (commit)
+  Staff->>Courier: create shipment (outside any transaction)
+  Courier-->>DB: READY_TO_SHIP + AWB
+  Courier->>Store: signed webhooks (shipped, out for delivery, delivered)
+  Store->>DB: dispatch stock on SHIPPED; COD COLLECTED on DELIVERED; RTO restocks and fails COD
+```
+
 ## Folder map
 
 ```
@@ -76,12 +117,12 @@ prisma/                 schema, migrations, seed
 src/app/                pages (store, admin), API routes, global 404
 src/lib/                cross-cutting: config, env, db, redis, elasticsearch, logger, errors,
                         api-handler, health, rate-limit/, security-headers, request-origin, money, ids
-src/components/         atoms, layouts (molecules and organisms added as needed)
+src/components/         atoms, molecules, organisms, layouts (atomic design)
 src/theme/              theme provider and status colours
 tests/support/          shared test helpers (target guard, test app URLs, test database setup)
 tests/integration/      Vitest against real Postgres and Redis (test database only)
 tests/http/             Supertest against a running app
 e2e/                    Playwright browser tests
-scripts/                start-test-server.ts
+scripts/                test server, search sync/reindex, unpaid-order expiry
 docs/                   design documents, walkthroughs, evidence
 ```

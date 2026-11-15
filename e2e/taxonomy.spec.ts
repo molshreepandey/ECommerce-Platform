@@ -8,7 +8,7 @@ import {
   visibleField,
   watchPageProblems,
 } from './support/auth';
-import { adminOrigin } from './support/page-checks';
+import { adminOrigin, projectLetter } from './support/page-checks';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -85,7 +85,7 @@ async function createProducts(page: Page, names: readonly string[]) {
 }
 
 test.beforeAll(({}, testInfo) => {
-  suffix = `${runId}${testInfo.project.name.includes('360') ? 'm' : 'd'}`;
+  suffix = `${runId}${projectLetter(testInfo.project.name).toLowerCase()}`;
 });
 
 test('a catalogue manager builds the category tree, tags products and groups them', async ({

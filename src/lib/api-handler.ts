@@ -63,7 +63,22 @@ function errorToResponse(thrown: unknown, requestContext: RequestContext): Respo
   return respondWithJson(envelope, 500, requestContext.requestId);
 }
 
-export function apiHandler<TRouteContext>(
+type RequestGuard = (request: NextRequest) => void;
+
+function sameOriginGuard(request: NextRequest): void {
+  const originCheck = checkRequestOrigin(
+    {
+      method: request.method,
+      originHeader: request.headers.get('origin'),
+      surface: request.headers.get(SURFACE_HEADER),
+    },
+    getConfig().surfaces,
+  );
+  if (!originCheck.allowed) throw new OriginNotAllowedError(originCheck.reason);
+}
+
+function handleWith<TRouteContext>(
+  guard: RequestGuard,
   implementation: ApiHandlerImplementation<TRouteContext>,
 ): RouteHandler<TRouteContext> {
   return async (request, routeContext) => {
@@ -72,15 +87,7 @@ export function apiHandler<TRouteContext>(
     const requestContext: RequestContext = { requestId, logger: createRequestLogger(requestId) };
     const startedAt = performance.now();
     try {
-      const originCheck = checkRequestOrigin(
-        {
-          method: request.method,
-          originHeader: request.headers.get('origin'),
-          surface: request.headers.get(SURFACE_HEADER),
-        },
-        getConfig().surfaces,
-      );
-      if (!originCheck.allowed) throw new OriginNotAllowedError(originCheck.reason);
+      guard(request);
       const response = await implementation(request, routeContext, requestContext);
       response.headers.set(REQUEST_ID_HEADER, requestId);
       return response;
@@ -97,4 +104,18 @@ export function apiHandler<TRouteContext>(
       );
     }
   };
+}
+
+// Browser-facing routes: mutating requests must come from the surface's own origin (plan §10B).
+export function apiHandler<TRouteContext>(
+  implementation: ApiHandlerImplementation<TRouteContext>,
+): RouteHandler<TRouteContext> {
+  return handleWith(sameOriginGuard, implementation);
+}
+
+// Server-to-server webhooks have no Origin; they authenticate with a signature checked by the handler.
+export function webhookHandler<TRouteContext>(
+  implementation: ApiHandlerImplementation<TRouteContext>,
+): RouteHandler<TRouteContext> {
+  return handleWith(() => undefined, implementation);
 }

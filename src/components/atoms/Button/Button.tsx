@@ -4,7 +4,7 @@ import { Icon, type IconSize } from '../Icon';
 import { Spinner } from '../Spinner';
 import type { ButtonProps, ButtonSize } from './button.types';
 
-const buttonClassNames = cva(
+export const buttonClassNames = cva(
   [
     'inline-flex items-center justify-center gap-sm rounded-default font-sans whitespace-nowrap transition-colors',
     'disabled:cursor-not-allowed disabled:opacity-60',
@@ -31,7 +31,7 @@ const buttonClassNames = cva(
   },
 );
 
-const iconSizeByButtonSize: Readonly<Record<ButtonSize, IconSize>> = {
+export const iconSizeByButtonSize: Readonly<Record<ButtonSize, IconSize>> = {
   xs: 'xs',
   sm: 'sm',
   md: 'sm',

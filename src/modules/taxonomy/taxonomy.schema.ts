@@ -52,3 +52,16 @@ export const tagProductsSchema = z.strictObject({
   categoryId: categoryIdSchema.nullable(),
 });
 export type TagProductsInput = z.infer<typeof tagProductsSchema>;
+
+// D21: every non-archived product on category A moves to leaf category B in one change.
+export const maximumProductsPerRecategorise = 2_000;
+export const recategoriseProductsSchema = z
+  .strictObject({
+    fromCategoryId: categoryIdSchema.transform((value) => value.toLowerCase()),
+    toCategoryId: categoryIdSchema.transform((value) => value.toLowerCase()),
+  })
+  .refine((input) => input.fromCategoryId !== input.toCategoryId, {
+    message: 'Choose a different target category',
+    path: ['toCategoryId'],
+  });
+export type RecategoriseProductsInput = z.infer<typeof recategoriseProductsSchema>;

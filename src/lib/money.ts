@@ -70,3 +70,21 @@ export const Money = {
     return rupeeFormatter.format(amountPaise / paisePerRupee);
   },
 };
+
+export function formatPaise(amountPaise: number): string {
+  return Money.formatRupees(Money.fromPaise(amountPaise));
+}
+
+// Admin forms take rupees ("499" or "499.50"); parsed as text so no floating-point value is involved.
+export function rupeesTextToPaise(text: string): number | null {
+  const match = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(text.trim());
+  if (match === null) return null;
+  const [, rupees = '0', fraction = ''] = match;
+  return Number(rupees) * 100 + Number(fraction.padEnd(2, '0'));
+}
+
+export function paiseToRupeesText(amountPaise: number): string {
+  const rupees = Math.trunc(amountPaise / 100);
+  const fraction = amountPaise % 100;
+  return fraction === 0 ? String(rupees) : `${String(rupees)}.${String(fraction).padStart(2, '0')}`;
+}

@@ -4,7 +4,7 @@ Spec: `~/Downloads/ECOMMERCE_PLATFORM_PLAN.md` (read-only). Waves follow plan se
 
 ## Waves
 
-Current status (updated 2026-11-12). The dated headings of the journal entries below record the status when
+Current status (updated 2026-11-15). The dated headings of the journal entries below record the status when
 each entry was written; this list is the current status.
 
 - [x] Wave 1 — Foundation (approved by the owner on 2026-11-07; commit `fa6ebd6`, push record `d7e3a0e`; on GitHub (private))
@@ -20,7 +20,24 @@ each entry was written; this list is the current status.
       inventory pages: commit `77e9a9b`, pushed on 2026-11-12. Step 5, dispatch and restock primitives and
       Wave 5 close-out: done and verified (363 unit, 390 integration, 91 HTTP, 66 browser), **not
       committed**, awaiting owner review.
-- [ ] Waves 6–16 (not started; revised order in `docs/REQUIREMENTS_TRACEABILITY.md`)
+- [x] Wave 5 — committed and pushed as `9953124` (2026-11-12).
+- [ ] Waves 6–10 — **built and verified on the test database (2026-11-14), not committed**, awaiting
+      owner review: 430 unit, 440 integration, 101 HTTP, 72 browser, all passing twice. Migration
+      `20261114090000` is applied to `ecommerce_test` only; the development database is unchanged.
+- [ ] Waves 11–12 (P1) — **built and verified on the test database (2026-11-14), not committed**,
+      awaiting owner review (owner extended the scope to Waves 11–12 on 2026-11-14): 447 unit, 473
+      integration, 111 HTTP, 80 browser; final verification (search prerender fix, diff review) done. Migration `20261114180000` (one index) is applied to
+      `ecommerce_test` only; the development database is unchanged.
+- [ ] Wave 13 (P1) — **built and verified (2026-11-15), not committed**, awaiting owner review: COMPLETE
+      (every feature implemented with passing tests).
+- [ ] Waves 14–15 — **PARTIALLY COMPLETE (2026-11-15)**: test evidence, EXPLAIN review, rules review,
+      OpenAPI + Swagger UI, ER diagram, README and technical report done; blocked by the owner's stop
+      conditions: CI result, fresh `db:reset`, deployment and deployed-URL regression (video: owner).
+- [ ] Wave 16 (P2) — **built and verified (2026-11-15), not committed**: search autocomplete (C14),
+      simulated notification log (C38), optional nearest-PIN allocation (a PIN-prefix approximation, not
+      geographic distance; TD-030). No migration.
+- Final verification (2026-11-15, see the last entry): all seven checks pass on the working tree and in an
+  isolated fresh copy; 474 unit, 520 integration, 122 HTTP, 150 browser. Nothing committed.
 
 CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
 
@@ -2525,3 +2542,408 @@ one were fixed in one round; the reused error code was documented instead.
 Development fingerprint `9cec751c29cab1faab002a9308e23887` at 08:33 UTC (before any test) and at 08:50 UTC
 (after everything); development and test each record five migrations; 0 non-test Redis keys. Test servers
 stopped; ports 3000, 3100 and 3200 free.
+
+## 2026-11-14 — Waves 6–10 (storefront, cart, checkout, fulfilment, admin)
+
+Owner decisions (this session): canonical P0 scope plus hardening/docs; simulated online gateway alongside
+COD; L31 snapshot columns; owner starts Docker; migration approved for the **test database only**.
+Walkthrough: `docs/walkthroughs/wave-6-10.md`; decisions TD-023 to TD-026; API in
+`docs/API_DOCUMENTATION.md`.
+
+### Found before starting
+
+- Uncommitted Wave 6 pages were outside `src/app/store/` (unreachable through the proxy) and
+  `npm run typecheck` failed with 17 errors (output kept in this session). Rebuilt under `src/app/store/`.
+- The requested "Wave 7 auth/account" is canonical Wave 2B (`f2c40ab`, already done).
+- OrbStack was down; the three containers stayed `Exited` throughout this entry.
+
+### Migration (prepared, not applied anywhere yet)
+
+`prisma/migrations/20261114090000_order_snapshots_online_payment` + rollback
+`prisma/rollbacks/20261114090000_order_snapshots_online_payment.down.sql` + review sheet
+`docs/migrations/20261114090000.md`. The development database is untouched.
+
+### Static verification (Node v26.13.0)
+
+| Command                | Result                                                                                                                                                                            |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`    | exit 0                                                                                                                                                                            |
+| `npm run lint`         | exit 0 (0 warnings)                                                                                                                                                               |
+| `npm run format:check` | "All matched files use Prettier code style!"                                                                                                                                      |
+| `npm test`             | 49 files, **426 / 426** passed (was 363)                                                                                                                                          |
+| `npm run build`        | exit 0, 82 routes (first attempt failed: `/store/account` prerender reached the database through the cached category tree; fixed with `connection()` in the catalogue components) |
+
+### Database-backed verification (after the owner started the containers, ~06:10 UTC)
+
+1. Development fingerprint before anything: `9cec751c29cab1faab002a9308e23887` (baseline).
+2. Read-only checks on `ecommerce_test` (review sheet): L22 mismatches 0, missing variants 0, malformed
+   order keys 0.
+3. `DATABASE_URL=$TEST_DATABASE_URL npx prisma migrate deploy` → "All migrations have been successfully
+   applied" (test database only). `prisma migrate diff --from-config-datasource --to-schema` → empty
+   migration (no drift).
+
+| Suite                                | First run                                                                                                              | Final (run twice)                        |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| `npm test`                           | 426                                                                                                                    | **430 / 430** (+4 route-check tests)     |
+| `npm run test:integration`           | 433 / 440: 6 fixture failures (my `createShopper` reused one phone number; `customers.phone` is unique), 1 real defect | **440 / 440** (was 390)                  |
+| `npm run test:http`                  | 99 / 101: unknown product page answered 200; existing admin 404 test hit the new `/orders/[orderId]` route             | **101 / 101** (was 91)                   |
+| `npm run test:e2e`                   | 65 passed, 2 failed, 5 not run                                                                                         | **72 / 72** (was 66), desktop and 360 px |
+| typecheck, lint, format:check, build | exit 0                                                                                                                 | exit 0                                   |
+
+Defects found by the new tests and fixed:
+
+- **Lost unit under concurrency (acceptance test 2).** 10 parallel checkouts for 3 units split 2 + 1 over two
+  warehouses placed only 2 orders: every checkout allocated from the first warehouse on an unlocked read,
+  the losers failed the guarded reservation, and the unit in the second warehouse was never sold. Fix
+  (TD-024): a reservation refusal rolls back and retries the checkout on fresh stock (at most 5 attempts;
+  each retry follows another checkout's success). The test failed before the fix and passes 3/3 after.
+- **Real 404 for unknown product and category URLs.** With Cache Components and partial prefetching the
+  page's static shell is sent (200) before `notFound()` runs. Fix: the proxy checks store
+  `/products/<slug>` and `/categories/<slug>` with one indexed lookup and rewrites unknown slugs to the
+  not-found page (fails open if the database is down); admin `/orders/<id>` and `/customers/<id>` with a
+  non-UUID id are 404 in the proxy, so the existing not-found test passes unchanged.
+- **Checkout total race.** Switching payment method updated the button at once but the server total a
+  moment later; ordering in between sent the old total (correctly refused with `PRICE_CHANGED`). The
+  button now waits while the order is re-priced.
+
+Existing test changed (owner to review): `e2e/catalogue.spec.ts` now waits for the refreshed "Version N"
+after "Save product" before clicking "Activate product". The Wave 3 editor sends the version shown on the
+page; under load the click could beat the refresh and get the designed `STALE_PRODUCT` refusal. No
+assertion was removed or relaxed.
+
+After everything: development fingerprint still `9cec751c29cab1faab002a9308e23887` with 5 migrations;
+test database 6 migrations; ports 3000, 3100 and 3200 free.
+
+## 2026-11-14 — Waves 11–12 (merchandising, discovery, post-purchase, operations)
+
+Owner instruction: the approved scope is Waves 6–12; finish Waves 11 and 12 from the canonical plan, verify
+rather than trust documentation, no Wave 13+, no migrations on development or production, no commit, push
+or deploy. Plan §12 Wave 11 = C6, C10, C13, C19, C21, D50, D51, D52; Wave 12 = C3, C36, C37, D34, D35,
+D38, D39, D43.
+
+### Found before starting
+
+- The working tree already held Wave 11–12 code written 12:03–12:27 IST the same day (after the last
+  documentation update at 11:57): OTP login, merchandising (banners, collections, branding, reviews),
+  returns and exchanges, documents, re-allocation, bulk actions, with integration tests
+  (`otp-login`, `merchandising`, `post-purchase`, `storefront-search`). None of it was recorded here, and the
+  traceability matrix still said "out of scope". No other session was running (checked).
+- `npm run typecheck` passed. The four integration files: **30 / 31**; the failure was real (below).
+- No HTTP or browser test covered any Wave 11–12 route or page.
+- Containers were up and healthy. Development fingerprint before anything:
+  `9cec751c29cab1faab002a9308e23887`, 5 migrations; test database 6 migrations.
+
+### Gap analysis (code read against the plan, feature by feature)
+
+All 16 features had a service, API route and page. Defects and gaps found, all fixed:
+
+| #   | Finding                                                                                                                                                                         | Fix                                                                                                                                                                                                                                            |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Split order: after one package shipped (order `PARTIALLY_SHIPPED`) the other could not be packed (`409 ORDER_NOT_CONFIRMED`). Wave 9 code; surfaced by the failing returns test | `order-lifecycle.service.ts`: packing allowed in `PARTIALLY_SHIPPED`; regression test in `order-lifecycle.test.ts`                                                                                                                             |
+| 2   | OTP: an unknown or blocked number got no challenge row, so a second request within 30 s was 200 for it but 429 for a registered number (account enumeration in production)      | every number gets a challenge (code never sent for unknown/blocked; verify refuses it since no active customer has the number); test proves equal cooldown and that even the right code of such a challenge gives 401                          |
+| 3   | Label and manifest: each package of a split COD order showed "collect" the **whole** order total (double collection; manifest COD total doubled)                                | `cod-collection.ts` (pure, 5 unit tests): share by goods value, remainder on the last package, shares add up to the total exactly; one batched query (`listCodShipmentGoods`); integration test with a split order                             |
+| 4   | Manifest query (`shipments` by warehouse and `shipped_at` day) had no supporting index (rule 1)                                                                                 | migration `20261114180000_shipment_manifest_index` + guarded rollback + review sheet `docs/migrations/20261114180000.md`; EXPLAIN on `ecommerce_test`: `Index Scan using shipments_warehouse_id_shipped_at_idx`                                |
+| 5   | Bulk action on a multi-package order: a failure after some packages were updated was reported as a plain failure                                                                | message "N of M shipments updated, then: …" with `details.updatedShipmentCount`                                                                                                                                                                |
+| 6   | `/collections/<slug>` was **404 for every live collection**: the proxy classified it as a category slug (found by the new HTTP test)                                            | `dynamic-route-check.ts` returns `store-collection` (the proxy already had the collection lookup); unit test added                                                                                                                             |
+| 7   | Collection page read the time during prerender (Next logged "unstable value `new Date()`")                                                                                      | `await connection()` before loading the collection; the log line is gone                                                                                                                                                                       |
+| 8   | `.env.example` lacked `OTP_DISPLAY_IN_UI` and `COURIER_WEBHOOK_SECRET`                                                                                                          | documented as commented placeholders                                                                                                                                                                                                           |
+| 9   | No HTTP or browser coverage for Waves 11–12                                                                                                                                     | `tests/http/merchandising-post-purchase.http.test.ts` (10 tests) and `e2e/post-purchase.spec.ts` (4 tests × 2 viewports); shared setup moved to `tests/http/support/commerce-api.ts` and `e2e/support/commerce.ts` (existing specs now use it) |
+
+Checked and found correct (no change): OTP hashing, constant-time compare, 5-attempt lock, single use,
+blocked customers; reviews (delivered only, unique per order line, outbox reindex); returns (order row lock
+serialises requests, cap = delivered − earlier non-rejected requests, RTO units excluded, refund capped at
+what was paid after the coupon, exchange order idempotent per return request, return row locked before any
+inventory lock = **L60 resolved**); re-allocation (one transaction, inactive warehouse refused by the
+reservation primitive); branding colour validated as `#rrggbb` before it reaches CSS.
+
+### Commands and results (Node v26.13.0)
+
+Batch 1 (fixes 1–5, 8): `npx vitest run src/modules/ordering src/modules/returns src/modules/merchandising`
+→ 26 / 26; the five Wave 11–12 + lifecycle integration files → **46 / 46** (the harness applied the new
+migration to `ecommerce_test` only; fingerprint after: development unchanged, 5 migrations; test 7).
+
+Batch 2 (HTTP): first run **110 / 111**: the collection page answered 404 (finding 6). After the fix and a
+rebuild: 111 / 111.
+
+Batch 3 (browser): new and refactored specs → 14 / 14. Full `npm run test:e2e` → **78 / 80**: the existing
+"store home … no CSP violations" test timed out waiting for network idle at both viewports. Cause: banners
+created by the new tests pointed at `picsum.photos`, which this machine cannot reach (`curl` timed out after
+10 s), and they stayed on the shared home page. Fix: the new HTTP and browser tests delete their banners, and
+`openSettledPage` answers the demo image host with a local 1×1 PNG (CSP still applies before the request is
+routed, so the CSP assertion keeps its meaning). Banner count on `ecommerce_test` after HTTP and after E2E: 0.
+
+Final full regression (one build, fresh test server):
+
+| Command                    | Result                                       |
+| -------------------------- | -------------------------------------------- |
+| `npm run typecheck`        | exit 0                                       |
+| `npm run lint`             | exit 0 (0 warnings)                          |
+| `npm run format:check`     | "All matched files use Prettier code style!" |
+| `npm test`                 | 53 files, **447 / 447** (was 430)            |
+| `npm run test:integration` | 39 files, **473 / 473** (was 440)            |
+| `npm run build`            | exit 0                                       |
+| `npm run test:http`        | 12 files, **111 / 111** (was 101)            |
+| `npm run test:e2e`         | **80 / 80** (was 72), desktop and 360 px     |
+
+The unit and integration increases include the Wave 11–12 tests written earlier in the day (previously
+unrecorded) plus this session's additions. Final server log: no error-level entries; one deliberate L43
+transaction timeout from the inventory lock test; one Next.js prerender message for `/store/search`
+(Wave 6, recorded as L69, not changed).
+
+### Databases
+
+- Development: fingerprint `9cec751c29cab1faab002a9308e23887` before and after, 5 migrations. Not touched.
+- Test (`ecommerce_test`): 7 migrations (adds `20261114180000_shipment_manifest_index`).
+- Nothing committed, pushed or deployed. Test server stopped; port 3100 free.
+
+### Open for the owner
+
+1. Review of Waves 11–12 (and of Waves 6–10, still uncommitted).
+2. Approval to apply `20261114090000` and `20261114180000` to development (with a verified backup).
+3. Commit and push approvals; Wave 13 needs explicit approval.
+4. Traceability: new limitations L66–L71; L60 resolved.
+
+## 2026-11-14 — Final verification before owner review (Waves 6–12)
+
+Owner instruction: fix the `/store/search` prerender message (Wave 6 is in scope), rebuild, rerun the full
+regression, verify both migrations on the test database and an unchanged development database, review the
+final diff, update the records. No migrations on development or production, no commit, push, deploy or
+Wave 13.
+
+### `/store/search` "unstable value `Date.now()` while prerendering" (L69)
+
+- **Evidence before:** one message per server run in all three earlier logs that included the browser
+  suite; never in a build log (it is raised at runtime, when the browser prefetches `/search`).
+- **Root cause (traced in the built chunk `src_modules_11mge-ie6vx63._.js`):** `StorefrontSearchView` →
+  `searchStorefront` → `searchProducts`, whose Elasticsearch fallback cooldown reads `Date.now()`. With
+  Partial Prefetching, a prefetch's runtime prerender resolves `searchParams` from the link URL
+  (`node_modules/next/dist/docs/01-app/01-getting-started/08-caching.md`, "Prefetching"), so awaiting them
+  no longer defers the render, and the uncached search ran inside the prerender.
+- **Fix:** `await connection()` at the start of `StorefrontSearchView` (`src/app/store/storefront-search-view.tsx`),
+  the documented pattern ("Random values and timestamps"). Search results depend on live stock and are not
+  cached, so request time is the correct behaviour; the same view serves `/categories/<slug>`, which had
+  the same latent path. Nothing suppressed; `searchProducts` unchanged (the API route already reads the
+  request).
+
+### Final regression (Node v26.13.0, one build, fresh test server)
+
+| Command                    | Result                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------- |
+| `npm run build`            | exit 0; build log: 0 warnings, 0 "unstable value"                                     |
+| `npm run typecheck`        | exit 0                                                                                |
+| `npm run lint`             | exit 0 (0 warnings)                                                                   |
+| `npm run format:check`     | "All matched files use Prettier code style!"                                          |
+| `npm test`                 | 53 files, **447 / 447**                                                               |
+| `npm run test:integration` | 39 files, **473 / 473**                                                               |
+| `npm run test:http`        | 12 files, **111 / 111**                                                               |
+| `npm run test:e2e`         | **80 / 80** (desktop and 360 px)                                                      |
+| server log after HTTP+E2E  | 0 "unstable value", 0 `Error:` lines, 0 error-level entries; 1 deliberate L43 timeout |
+
+### Databases
+
+- `ecommerce_test`: `20261114090000_order_snapshots_online_payment` and
+  `20261114180000_shipment_manifest_index` finished, not rolled back; index
+  `shipments_warehouse_id_shipped_at_idx` and table `payment_attempts` present;
+  `prisma migrate diff --from-config-datasource --to-schema` → "This is an empty migration."
+- Development: fingerprint `9cec751c29cab1faab002a9308e23887`, 5 migrations, neither new migration
+  present. Not touched. Port 3100 free afterwards.
+
+### Diff review
+
+- 202 working-tree entries (62 modified, 139 untracked, 1 staged rename `src/app/store/loading.tsx →
+src/app/store/account/loading.tsx` from the Waves 6–10 work, kept so a store `notFound()` stays a real 404).
+- No build output, generated Prisma client, logs, `.env`, Playwright reports or test results in the change
+  set. `AGENTS.md` unchanged. No dependency changes (`package.json` adds three scripts only).
+- Secrets scan of the full diff and every untracked file (private keys, GitHub/AWS/Slack/JWT-shaped tokens,
+  credentialed URLs other than the documented local placeholder, secret assignments, real e-mail
+  addresses): none. `localOnlyCourierSecret` is a public development/test constant that every other
+  environment refuses (`courier-secret.ts`).
+- Config diffs add rate-limit policies only; `trustedProxyHopCount` is 0 in all four configs.
+  `next.config.ts` adds the approved Redis cache handler (Wave 6).
+- No `.only`, `debugger`, `TODO` or `FIXME`; `console.log` only in the three CLI scripts.
+- `git diff --check` clean.
+
+## 2026-11-15 — Waves 13–15 (admin power tools, hardening, documentation)
+
+Owner approval: "Start 13–15, safe parts" (Wave 13 in full; Wave 14 without `db:reset` or CI; Wave 15
+documentation and Swagger, no deployment), with explicit stop conditions. No migration was needed or
+applied; the development database was not touched. Decisions TD-027 to TD-029.
+
+### Wave 13 (COMPLETE)
+
+| Feature | Built                                                                                                                                                                                                |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D27     | `stock-transfer.service.ts`, `POST /api/admin/inventory/transfers`, transfer dialog on the stock matrix (source defaults to the warehouse holding most of the product)                               |
+| D21     | `recategoriseProducts` in `tagging.service.ts`, `POST /api/admin/tagging/recategorise`, "Move all products" on the tagging page                                                                      |
+| D3      | `staff-admin.*` (identity), `/api/admin/staff*`, `/api/admin/roles`, admin **Staff** page                                                                                                            |
+| D48     | `search-admin.service.ts`, `/api/admin/search-index*`, admin **Search index** page                                                                                                                   |
+| D41     | `pincode-import.service.ts`, `POST …/pincodes/import`, upload on the couriers page                                                                                                                   |
+| D8      | `report-export.*`, `GET /api/admin/reports/export/{report}`, links on the reports page                                                                                                               |
+| D16     | `product-import.service.ts` (reuses `createProductInTransaction` / `createVariantInTransaction`, split out of the existing create functions), import/export routes, section on the product-type page |
+| shared  | `src/lib/csv.ts` (+ unit tests), `CsvUploadForm`                                                                                                                                                     |
+| D29     | already built in Wave 5 (verified: `low-stock-thresholds.test.ts`)                                                                                                                                   |
+
+### Wave 14 and 15 work
+
+- `docs/evidence/explain-review.md` confirms 26 / 26 queries use an index (no further EXPLAIN work needed).
+- ~~UI hardening automated checks added (`e2e/ui-hardening.spec.ts`)~~ **Correction (2026-11-15
+  final verification):** that file imported `axe-playwright`, which is not installed, targeted the
+  development server on port 3000, and broke typecheck, lint and build; it never ran. It was removed
+  (owner-approved, backed up). The real checks are `e2e/accessibility.spec.ts` (in-repo audit in
+  `e2e/support/accessibility.ts`, keyboard flows) run by the `chromium-tablet-768` project added to
+  `playwright.config.ts` alongside desktop and 360 px.
+- Searches (re-run 2026-11-15): 0 inline `style=` outside atoms, 0 `any` types (two matches are the
+  English word in comments), 0 `eslint-disable` / `@ts-*` directives, 0 TODO/FIXME.
+
+- `docs/evidence/explain-review.md`: 26 queries EXPLAINed on `ecommerce_test` with sequential scans
+  disabled; 25 used an index at first; the dashboard return count filtered on the unindexed
+  `return_requests.created_at` and now uses `requested_at` (skip scan on the existing index; no migration).
+- Rules review by search: no `any`, `!`, `eslint-disable` or TODO; casts only at validated boundaries; no
+  native form elements or inline styles outside atoms.
+- `docs/openapi.json` generated by `scripts/generate-openapi.ts` (`npm run docs:openapi`, 149 operations)
+  with a drift test; Swagger UI at admin `/docs` from `swagger-ui-dist` **5.34.1** (new, exact pin,
+  published 2026-10-30, Apache-2.0; `npm audit --omit=dev`: 0 vulnerabilities; the `@scarf/scarf`
+  telemetry install script was not run and is disabled via `scarfSettings`).
+- `docs/er-diagram.svg` regenerated; `docs/test-evidence.md`, `docs/technical-report.md`, README, API
+  documentation and TD-027 to TD-029 written.
+
+### Problems found while building, all fixed
+
+| Found by                   | Problem                                                                                                                                                                                               | Fix                                                                         |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| browser test (transfer)    | the dialog defaulted "From" to the first active warehouse, which held none of the product → 409                                                                                                       | default to the warehouse with the most available units of that product      |
+| browser test (product CSV) | the upload form and its file field had the same accessible name                                                                                                                                       | the form is "Upload <label>"                                                |
+| `Card` review              | `aria-label` on `Card` is silently dropped (only `aria-labelledby` is forwarded; TypeScript allows any `aria-*`)                                                                                      | search page sections use headings with `aria-labelledby`                    |
+| audit secrets check        | the audit key `revokedSessions` matches the secret-key pattern                                                                                                                                        | renamed `endedLogins`                                                       |
+| Swagger first version      | operations listed twice (two tags each), "Try it out" pointed at a fixed host and port                                                                                                                | one tag per operation, relative server `/`, summaries from handler comments |
+| test fixtures              | new tests had a wrong error code (`FORBIDDEN` vs `PERMISSION_DENIED`), a reused product-type code, branded-id types, an unstable "queued changes: 0" check, a DOM count on lazily rendered Swagger UI | corrected; no assertion about product behaviour was weakened                |
+
+### Final verification (Node v26.13.0, one build, fresh test server)
+
+| Command                    | Result                                   |
+| -------------------------- | ---------------------------------------- |
+| typecheck, lint, format    | exit 0, 0 warnings                       |
+| `npm test`                 | 55 files, **455 / 455** (was 447)        |
+| `npm run test:integration` | 46 files, **504 / 504** (was 473)        |
+| `npm run build`            | exit 0, no warnings                      |
+| `npm run test:http`        | 13 files, **119 / 119** (was 111)        |
+| `npm run test:e2e`         | **90 / 90** (was 80), desktop and 360 px |
+| server log                 | no errors; one deliberate L43 timeout    |
+
+### Blocked (stop conditions) — not marked complete
+
+- CI green: CI results cannot be read with the current token (L11); no push allowed.
+- Acceptance tests on a fresh `db:reset`: destructive, excluded by the owner.
+- Deployment and regression on deployed URLs: not approved; needs hosting accounts and credentials.
+- Walkthrough video: the owner records it.
+- UI pass: tablet width and manual keyboard / screen-reader checks not performed (L76).
+
+## 2026-11-15 — Final verification and completion pass (Waves 1–16)
+
+Owner request: verify everything against the real tree, fix confirmed problems, no commit, push, deploy,
+migration or dev-database write. Owner approvals in this session: owner started the three Docker
+containers; test suites may write to `ecommerce_test` only; one `npm run build` outside the command
+sandbox; back up and remove four orphan files. Decisions: TD-030 (Wave 16), TD-031 (fixes below).
+
+### Starting state (before any change)
+
+| Check                  | Result                                                                                                                           |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run typecheck`    | **exit 2**: unused `@ts-expect-error` in `e2e/ui-hardening.spec.ts`                                                              |
+| `npm run lint`         | **exit 1**: 6 errors (3 in `e2e/ui-hardening.spec.ts`, 3 in the `webpack()` hook of `next.config.ts`)                            |
+| `npm run format:check` | exit 0                                                                                                                           |
+| `npm test`             | exit 0, 472 / 472, 57 files                                                                                                      |
+| `npm run build`        | **exit 1**: Turbopack panic on `swagger-ui.css.css`; `next build --webpack` compiled, then failed type checking on the same spec |
+
+### Problems found and fixed
+
+| Problem                                                                                                                        | Fix                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Build panic: stale `.next/cache/turbopack` (same panic on `globals.css` without Swagger, and outside the sandbox)              | cache moved aside to `.next/cache/turbopack-suspect-20261115` (generated output; safe to delete); no source change |
+| Dead `webpack()` hook in `next.config.ts` (lint errors)                                                                        | removed                                                                                                            |
+| `e2e/ui-hardening.spec.ts` broken duplicate aimed at the dev server                                                            | removed (backup)                                                                                                   |
+| Unused `src/modules/allocation/distance.service.ts` + 2-PIN `src/data/pincode-location.json`; unused `store-settings.cache.ts` | removed (backup in `~/ecommerce-backups/20261115-orphans/`)                                                        |
+| `npm run lint` failed on a clean checkout (79 errors; CI runs lint before typecheck)                                           | `lint` runs `next typegen` first                                                                                   |
+| Security H1: simulated gateway (customer picks SUCCESS) usable in production                                                   | off in production: checkout 422 `ONLINE_PAYMENT_UNAVAILABLE`, payments refused, COD-only form                      |
+| Security M1: `OTP_DISPLAY_IN_UI=true` returned the OTP in production                                                           | production never returns it                                                                                        |
+| Security M5: exchange to any (pricier) variant at no charge                                                                    | same variant or price ≤ unit price paid; new integration test                                                      |
+| Security M6: webhook receipt committed before processing; a transient failure lost the event as DUPLICATE                      | receipt stored inside the processing transaction; test extended                                                    |
+| Security L3: Swagger asset allow-list let `constructor` through (500)                                                          | `Map` lookup                                                                                                       |
+| Docs: Wave 16 "not started", TD-030 missing, settings claimed cached, a false UI-hardening claim                               | corrected (README, technical report, traceability, redis design, TD-030/031)                                       |
+
+Security findings recorded, not changed (design or owner decisions): phone numbers are not verified
+before OTP login (M2); with `trustedProxyHopCount` 0 all guests share one cart rate-limit bucket (M3);
+no cap on open unpaid online orders per customer (M4); one courier HMAC secret for all partners (L2);
+webhook body read before the size check (L1, proxy caps at ~10 MB); no rate limit on public search,
+suggest and review posting (L5); CSP keeps `'unsafe-inline'` scripts (L6). Checked and OK: admin RBAC on
+every handler, store ownership checks (no IDOR), no unsafe raw SQL, no XSS sinks, CSV formula escaping,
+open-redirect guard, upload limits, webhook HMAC + dedupe, OTP hashing and attempt lock, server-side
+pricing in paise, guarded stock updates, session cookies.
+
+### Final results (working tree, one build, fresh test server)
+
+| Command                    | Result                                      |
+| -------------------------- | ------------------------------------------- |
+| typecheck, lint, format    | exit 0, exit 0, exit 0                      |
+| `npm test`                 | exit 0, 57 files, **474 / 474**             |
+| `npm run test:integration` | exit 0, 51 files, **520 / 520**             |
+| `npm run build`            | exit 0, no warnings                         |
+| `npm run test:http`        | exit 0, 14 files, **122 / 122**             |
+| `npm run test:e2e`         | exit 0, **150 / 150** (desktop, 360, 768)   |
+| server log                 | 0 error entries; one deliberate L43 timeout |
+
+Fresh copy (clone of `HEAD` + exactly the files to commit, byte-identical): `npm ci --offline` exit 0, then
+the same seven checks plus integration, all exit 0 with the same totals (`docs/test-evidence.md`).
+
+### Still open (not done; owner approval or external access needed)
+
+- Commit and push of everything since `9953124`; CI result (token cannot read Actions, L11).
+- Migrations `20261114090000` and `20261114180000` on the development database (test database only).
+- `npm run db:reset` acceptance run, deployment, deployed-URL regression, video.
+
+## 2026-11-15 — Remaining security findings and UI polish (TD-032)
+
+Fixed with regression tests: M3 (no shared guest cart bucket for unknown IPs), M4 (at most 2 unpaid
+online orders per customer, 409 `UNPAID_ORDERS_LIMIT`), L1 (webhook size checked before reading,
+`readTextWithin`), L5 (`public-search` and `review-write` rate limits). Owner decisions recorded, not
+changed: M2 phone verification (needs a migration), registration bucket (needs the proxy hop count), L2
+per-partner courier secret, L6 CSP nonces. UI, checked on screenshots of the running test server: cart
+count badge without status dot, search placeholder no longer clipped, admin sidebar grouped into
+sections. Removed the unused `SearchBar` molecule (backup).
+
+| Command                    | Result                          |
+| -------------------------- | ------------------------------- |
+| typecheck, lint, format    | exit 0, exit 0, exit 0          |
+| `npm test`                 | exit 0, 58 files, **479 / 479** |
+| `npm run test:integration` | exit 0, 51 files, **524 / 524** |
+| `npm run build`            | exit 0, 111 pages, no warnings  |
+| `npm run test:http`        | exit 0, 14 files, **122 / 122** |
+| `npm run test:e2e`         | exit 0, **150 / 150**           |
+
+Server log: 0 errors, 1 deliberate L43 timeout warning. Development database fingerprint
+`9cec751c29cab1faab002a9308e23887` (unchanged; 5 migrations). Nothing committed.
+
+## 2026-11-15 — Re-authentication, partner keys, migration review (TD-033)
+
+- M2 partly fixed (phone change needs the current password and signs out other sessions); the
+  verified-phone part is a proposal needing a migration (`docs/migrations/proposed-phone-verification.md`).
+- L2 fixed (per-partner derived webhook keys). L6 kept with the reason from Next's CSP guide. Production
+  logs a warning at start while `trustedProxyHopCount` is 0.
+- Pending migrations reviewed: `prisma migrate diff` against `ecommerce_test` reports no difference;
+  read-only pre-flight on development is clean; rollbacks match. Checklist:
+  `docs/migrations/dev-migration-checklist.md`. Not applied to development.
+- One HTTP failure while building: the test process had no app environment for `courierSigningKey`; a
+  pure `deriveCourierSigningKey` is used by the test. Re-running `test:http` three times against one server
+  then hit the shared registration limit (429, by design); a fresh server run passed.
+
+| Command                    | Result                          |
+| -------------------------- | ------------------------------- |
+| typecheck, lint, format    | exit 0, exit 0, exit 0          |
+| `npm test`                 | exit 0, 59 files, **481 / 481** |
+| `npm run test:integration` | exit 0, 51 files, **525 / 525** |
+| `npm run build`            | exit 0, 111 pages               |
+| `npm run test:http`        | exit 0, 14 files, **122 / 122** |
+| `npm run test:e2e`         | exit 0, **150 / 150**           |
+
+Server log: 0 errors, 1 deliberate L43 warning. Development fingerprint unchanged
+(`9cec751c29cab1faab002a9308e23887`). Nothing committed.

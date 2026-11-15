@@ -67,6 +67,19 @@ export async function revokeAllSessionsForSubject(
   return count;
 }
 
+// Every other live session of the subject, keeping the one making the request.
+export async function revokeOtherSessionsForSubject(
+  database: DatabaseClient,
+  subject: { subjectType: SessionSubjectType; subjectId: string },
+  keptSessionId: string,
+): Promise<number> {
+  const { count } = await database.session.updateMany({
+    where: { ...subject, revokedAt: null, id: { not: keptSessionId } },
+    data: { revokedAt: new Date() },
+  });
+  return count;
+}
+
 export async function findPermissionCodesForStaff(
   database: DatabaseClient,
   staffUserId: string,

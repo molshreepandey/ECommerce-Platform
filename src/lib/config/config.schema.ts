@@ -9,6 +9,14 @@ export const rateLimitActions = [
   'customer-register',
   'staff-login',
   'inventory-write',
+  'checkout',
+  'payment-attempt',
+  'cart-write',
+  'otp-request',
+  'otp-verify',
+  'staff-write',
+  'public-search',
+  'review-write',
 ] as const;
 export const rateLimitActionSchema = z.enum(rateLimitActions);
 export type RateLimitAction = z.infer<typeof rateLimitActionSchema>;
@@ -75,6 +83,14 @@ export const appConfigSchema = z
       'customer-register': rateLimitPolicySchema,
       'staff-login': rateLimitPolicySchema,
       'inventory-write': rateLimitPolicySchema,
+      checkout: rateLimitPolicySchema,
+      'payment-attempt': rateLimitPolicySchema,
+      'cart-write': rateLimitPolicySchema,
+      'otp-request': rateLimitPolicySchema,
+      'otp-verify': rateLimitPolicySchema,
+      'staff-write': rateLimitPolicySchema,
+      'public-search': rateLimitPolicySchema,
+      'review-write': rateLimitPolicySchema,
     }),
     security: z.strictObject({
       strictTransportSecurityMaxAgeSeconds: z.int().min(0),
@@ -85,6 +101,12 @@ export const appConfigSchema = z
         frameSources: z.array(contentSecuritySource),
       }),
     }),
+    // Optional feature flags for development configuration
+    featureFlags: z
+      .strictObject({
+        enableDistanceAllocation: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine(
     (config) =>

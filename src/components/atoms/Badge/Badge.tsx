@@ -28,10 +28,10 @@ const badgeDotClassNames = cva('size-1.5 shrink-0 rounded-pill', {
   },
 });
 
-export function Badge({ tone = 'neutral', size = 'md', children }: BadgeProps) {
+export function Badge({ tone = 'neutral', size = 'md', hasDot = true, children }: BadgeProps) {
   return (
     <span className={badgeClassNames({ tone, size })}>
-      <span aria-hidden="true" className={badgeDotClassNames({ tone })} />
+      {hasDot ? <span aria-hidden="true" className={badgeDotClassNames({ tone })} /> : null}
       {children}
     </span>
   );

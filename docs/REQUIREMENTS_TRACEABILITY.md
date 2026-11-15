@@ -3,8 +3,8 @@
 Primary specification: the Algions AI Labs assessment brief "E-Commerce Platform" (Full-Stack Web
 Development). Feature IDs (C*, D*) refer to `ECOMMERCE_PLATFORM_PLAN.md`. Updated at the end of every wave.
 
-Status: ✅ completed with evidence · 🟡 partial (groundwork exists) · ⬜ pending. Last update: Wave 5 step 5
-(2026-11-12, awaiting owner review).
+Status: ✅ completed with evidence · 🟡 partial (groundwork exists) · ⬜ pending · ⛔ blocked by a stop
+condition. Last update: Waves 13–15 (2026-11-15, working tree, not committed, awaiting owner review).
 
 ## Brief §1: business scope
 
@@ -152,3 +152,145 @@ Resolved in Wave 2B (previously listed):
 - the rate limiter is wired to sign-in and registration;
 - seeded passwords are no longer placeholders;
 - the development server has a safe smoke-test procedure (`start:test:dev`, TESTING_STRATEGY).
+
+## Update 2026-11-14 (Waves 6–10, working tree, not committed)
+
+| Area                                 | Features                                              | Status                                                                 | Evidence                                                                                                |
+| ------------------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Storefront                           | C7, C8, C9, C11, C12, C15–C18, C20                    | ✅ built and tested                                                    | `tests/http/commerce.http.test.ts`, `e2e/commerce.spec.ts`, `variant-selection.test.ts`                 |
+| Cart, pricing, coupons, settings     | C22–C26, D45, D47                                     | ✅                                                                     | `pricing.test.ts`, `coupon-rules.test.ts`, `tests/integration/cart.test.ts`                             |
+| Checkout (COD + simulated online)    | C27–C32                                               | ✅ acceptance tests 1–3                                                | `tests/integration/checkout.test.ts`, `online-payment.test.ts`                                          |
+| Fulfilment, courier, order lifecycle | C33–C35, D31–D33, D36, D37, D40, D41 (list/edit), D42 | ✅ acceptance test 4                                                   | `tests/integration/order-lifecycle.test.ts`, `order-state.test.ts`, `webhook-signature.test.ts`         |
+| Customers, dashboard, reports, audit | D4–D7, D44, D46                                       | ✅ acceptance test 5                                                   | `tests/integration/reports-and-customers.test.ts`, HTTP RBAC tests                                      |
+| L22, L23, L31                        | —                                                     | ✅ resolved by migration `20261114090000` (test database only)         | review sheet `docs/migrations/20261114090000.md`                                                        |
+| P2 (Wave 16)                         | C14, C38, pincode-distance allocation                 | ✅ built and tested (allocation is a PIN-prefix approximation, TD-030) | `search-suggest.test.ts`, `notifications.test.ts`, `nearest-allocation.test.ts`, `wave-16.http.test.ts` |
+
+New limitations: L61 no background scheduler for unpaid online orders (expired on requests and by
+`npm run orders:expire-unpaid`); L62 refunds for cancelled online orders are manual; L63 coupon usage is not
+returned on cancellation; L64 orders with some shipments delivered and others returned stay
+`PARTIALLY_DELIVERED`; L65 the admin customer name search is a contains match without an index (exact
+email/phone use unique indexes).
+
+## Update 2026-11-14 (Waves 11–12, working tree, not committed)
+
+Scope: canonical plan Waves 11 and 12 (P1), approved by the owner on 2026-11-14. Every row was checked
+against the code and tests in this session, not taken from earlier documentation (journal entry
+"2026-11-14 — Waves 11–12").
+
+| Wave | Feature | Requirement (plan §4–§5, §12)                                                                   | Status | Evidence (all passing in the final run)                                                                                                                                                                              |
+| ---- | ------- | ----------------------------------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 11   | C6      | Home: banners, collections, new arrivals, top categories                                        | ✅     | `merchandising.test.ts` (expired/future banner hidden); HTTP live banner on `/`, expired absent; E2E home banner + collection link                                                                                   |
+| 11   | C10     | Facet counts on every filter value (ES aggregations, Postgres fallback)                         | ✅     | `storefront-search.test.ts` (Postgres facets; ES facets after sync)                                                                                                                                                  |
+| 11   | C13     | Collection pages                                                                                | ✅     | `merchandising.test.ts`; HTTP API + page 200, inactive 404 (API and page); E2E collection page. Defect fixed: the proxy classified `/collections/<slug>` as a category, so every collection page was 404             |
+| 11   | C19     | Pincode check: serviceable, delivery days, COD                                                  | ✅     | `merchandising.test.ts`; HTTP serviceable / unserviceable / malformed (400); E2E product-page check                                                                                                                  |
+| 11   | C21     | Verified-buyer reviews (delivered items only), rating in ES                                     | ✅     | `merchandising.test.ts` (403 before delivery, 409 second, 403 someone else's); HTTP 401/403/201/409 + product summary; E2E "Write a review"                                                                          |
+| 11   | D50     | Collections admin (name, slug, hand-picked products, active dates)                              | ✅     | `merchandising.test.ts` (403 without `merchandising.write`); HTTP create + products; E2E admin page renders                                                                                                          |
+| 11   | D51     | Banners admin (image URL, link, order, active dates)                                            | ✅     | `merchandising.test.ts` (CSP host check); HTTP 403 for SUPPORT, off-site link 400; E2E admin page renders                                                                                                            |
+| 11   | D52     | Store branding (name, logo, primary colour) on the storefront theme                             | ✅     | `merchandising.test.ts` (audit row, logo host); HTTP name + `--color-primary` on `/`, 403 SUPPORT, CSS injection 400                                                                                                 |
+| 12   | C3      | OTP login via `log_otp_sender`, popup when `OTP_DISPLAY_IN_UI=true`, expiry, attempts, cooldown | ✅     | `otp-login.test.ts` (expiry, 5-attempt lock, cooldown, reuse, hidden when false, unknown/blocked numbers); HTTP request/verify/429/401/reuse/origin 403; E2E popup sign-in. Defect fixed: cooldown revealed accounts |
+| 12   | C36     | Invoice PDF                                                                                     | ✅     | `post-purchase.test.ts`; HTTP owner 200 `application/pdf`, other customer 404; E2E invoice link                                                                                                                      |
+| 12   | C37     | Return / exchange request within the return window; status                                      | ✅     | `post-purchase.test.ts` (outside window 422, not delivered 422, RTO units excluded, split delivered/RTO line, quantity cap); HTTP 422s + 201; E2E request from the order page                                        |
+| 12   | D34     | Re-allocate an unpacked shipment (atomic reservation move)                                      | ✅     | `post-purchase.test.ts` (moved, no stock 409 with nothing changed, packed 409); HTTP 403/400/409/200                                                                                                                 |
+| 12   | D35     | Label download; daily manifest per warehouse                                                    | ✅     | `post-purchase.test.ts` incl. split COD order (shares add up to the total once); HTTP label/manifest JSON/PDF, bad date 400. Defect fixed: each package of a split COD order asked for the whole total               |
+| 12   | D38     | Bulk status actions with per-row results                                                        | ✅     | `post-purchase.test.ts`; HTTP partial success (2 done, 1 not found), repeat → `INVALID_TRANSITION`, 403, duplicate ids 400; E2E bulk confirm                                                                         |
+| 12   | D39     | Invoice / packing slip PDF                                                                      | ✅     | `post-purchase.test.ts`; HTTP admin invoice + packing slip (SUPPORT, `orders.read`)                                                                                                                                  |
+| 12   | D43     | Returns queue: approve/reject → pickup → received → restock → manual refund or exchange order   | ✅     | `post-purchase.test.ts` (refund capped at paid, exchange order reserved, rejection frees quantity, 6 audit rows); HTTP full chain, 403, 409, 422 `REFUND_TOO_LARGE`; E2E queue to "refunded"                         |
+
+Plan test list for Wave 11 (review without delivery 403, second review 409, expired banner hidden, pincode
+check results) and Wave 12 (OTP expiry, attempt limit, resend cooldown, reuse, `displayedOtpCode` absent when
+`OTP_DISPLAY_IN_UI=false`, return outside window 422, re-allocation without stock 409, bulk partial success):
+all present and passing.
+
+Resolved: **L60** — every return step locks the `return_requests` row before any inventory lock, and only
+units in DELIVERED shipments are returnable (an RTO unit can never also be returned; tested with a line
+split between a delivered and an RTO shipment).
+
+Also fixed (Wave 9 code, found by a Wave 12 test): the second package of a split order could not be packed
+once the first had shipped (order `PARTIALLY_SHIPPED`); regression test in `order-lifecycle.test.ts`.
+
+New limitations:
+
+| #   | Limitation                                                                                                                                                                                                                             | Where to address                      |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| L66 | With `OTP_DISPLAY_IN_UI=true` (local, staging, demo) the popup appears only for numbers with an active account, so the demo reveals which numbers are registered; production (`false`) gives every number the same answer and cooldown | by design for the demo (plan C3)      |
+| L67 | The return window of an order line split across shipments is counted from its latest delivery                                                                                                                                          | if partial windows are needed         |
+| L68 | Migration `20261114180000_shipment_manifest_index` is applied to `ecommerce_test` only; development and production need owner approval (after `20261114090000`)                                                                        | owner                                 |
+| L69 | ~~`/store/search` logged a Next.js "unstable value `Date.now()` while prerendering" message~~ **Resolved 2026-11-14** (see below)                                                                                                      | —                                     |
+| L70 | A bulk action on an order with several shipments applies them one transaction each; if a later one fails, the row is reported failed with "N of M shipments updated" and the earlier ones stay done                                    | by design (D38 per-row results)       |
+| L71 | A COD order's per-package amount is split by goods value with the remainder on the last package (by id); the payment becomes COLLECTED only when every package is delivered (L64 still applies to mixed delivered/RTO orders)          | with partial COD collection, if added |
+
+### Final verification (2026-11-14, before owner review)
+
+- **L69 resolved.** Root cause: with Partial Prefetching, a `<Link>` prefetch runs a runtime prerender in
+  which `searchParams` are already resolved, so `await searchParams` did not make the render request-time;
+  `StorefrontSearchView` → `searchStorefront` → `searchProducts` then read `Date.now()` (the Elasticsearch
+  fallback cooldown) during that prerender (traced through the built chunk). Fix: `await connection()` in
+  `StorefrontSearchView` before the live search (the documented pattern; search results depend on stock and
+  are never cached), which also covers `/categories/<slug>`. Nothing suppressed. The message appeared once in
+  each of the three earlier server logs that ran the browser suite; after the fix, 0 in the build log and 0 in
+  the server log of the full HTTP + browser run.
+- Final results: typecheck, lint, format, build exit 0; **447** unit, **473** integration, **111** HTTP,
+  **80** browser (desktop and 360 px), all passing.
+- Databases: `ecommerce_test` has `20261114090000_order_snapshots_online_payment` and
+  `20261114180000_shipment_manifest_index` (finished, not rolled back; `prisma migrate diff` against the
+  schema: empty). Development: fingerprint `9cec751c29cab1faab002a9308e23887`, 5 migrations, neither new
+  migration present.
+
+## Update 2026-11-15 (Waves 13–15, working tree, not committed)
+
+Scope: owner approval 2026-11-15 "Start 13–15, safe parts" — Wave 13 in full; Wave 14 without
+`db:reset` or CI; Wave 15 documentation and Swagger, no deployment. Owner stop conditions applied
+(journal entry "2026-11-15 — Waves 13–15"). **Overall: PARTIALLY COMPLETE** — Wave 13 complete; Waves 14
+and 15 complete except the items blocked below.
+
+### Wave 13 — admin power tools: COMPLETE
+
+| Feature | Requirement                                                          | Status | Evidence (all passing in the final run)                                                                                                                                                                              |
+| ------- | -------------------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D3      | Staff management (super admin): create, assign role, deactivate      | ✅     | `tests/integration/staff-admin.test.ts` (own account 409, last super admin 409 incl. two concurrent deactivations, sessions revoked, audit free of the password); HTTP 403/201/409/204/401; E2E                      |
+| D8      | CSV exports: orders, sales, GST summary, inventory by warehouse      | ✅     | `tests/integration/report-exports.test.ts` (sales = dashboard GMV = order rows; GST per rate = item tax with a coupon over two rates); `src/lib/csv.test.ts` (formula neutralising); HTTP; E2E links                 |
+| D16     | Bulk CSV upload per product type with row errors; CSV export         | ✅     | `tests/integration/product-import.test.ts` (bad rows never written, a bad variant rejects only its product, existing slug/SKU reported, export = template = round trip); HTTP; E2E                                   |
+| D21     | Bulk re-categorise A → B                                             | ✅     | `tests/integration/recategorise.test.ts` (archived stay, audit per product + batch, outbox, opposite moves without deadlock); HTTP; E2E                                                                              |
+| D27     | Transfer stock between warehouses (one transaction, two ledger rows) | ✅     | `tests/integration/stock-transfers.test.ts` (reserved units never move, all or nothing, idempotent key, 10 parallel one-unit transfers of 3 available → exactly 3 and total constant, opposite transfers); HTTP; E2E |
+| D29     | Low-stock threshold per variant per warehouse                        | ✅     | built in Wave 5: `tests/integration/low-stock-thresholds.test.ts`, `inventory.http.test.ts`, `e2e/inventory.spec.ts`                                                                                                 |
+| D41     | Serviceable pincodes CSV upload                                      | ✅     | `tests/integration/pincode-import.test.ts` (bad and repeated rows reported by line, never written; header 422); HTTP                                                                                                 |
+| D48     | Search index tools: health, outbox backlog, full reindex             | ✅     | `tests/integration/search-admin.test.ts` (backlog drained, reindex swaps the alias, 403); HTTP; E2E                                                                                                                  |
+
+Plan Wave 13 tests: "CSV row errors reported without partial writes of bad rows" (pincode and product
+imports) and "transfer keeps total stock constant" — both present and passing.
+
+### Wave 14 — hardening: PARTIALLY COMPLETE
+
+| Item                                                | Status | Evidence / reason                                                                                                                                                                                                                  |
+| --------------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Full test suite run + `docs/test-evidence.md`       | ✅     | `docs/test-evidence.md` (455 unit, 504 integration, 119 HTTP, 90 browser) with the acceptance-test table                                                                                                                           |
+| `EXPLAIN` review of list/report queries (§9.4)      | ✅     | `docs/evidence/explain-review.md`: 26 / 26 use an index; the dashboard return count was fixed (used an unindexed column)                                                                                                           |
+| Review of rules 1–27                                | ✅     | no `any`, no `!`, no `eslint-disable`, no TODO; `as` only at validated boundaries; lint at zero warnings; two `as` casts written in this wave were replaced with Zod parsing                                                       |
+| UI pass (10D/10E) at 360 px, tablet, desktop        | 🟡     | no native form elements or inline styles outside atoms (searched); every new page checked for horizontal overflow at 360 px and desktop by the browser tests; **tablet width and manual keyboard / screen-reader checks not done** |
+| "Done when": CI green                               | ⛔     | stop condition 7/11: CI results cannot be read with the current token (L11) and nothing may be pushed                                                                                                                              |
+| "Done when": acceptance tests on a fresh `db:reset` | ⛔     | stop condition 4: `db:reset` deletes data; excluded by the owner. Acceptance tests pass on the freshly migrated, truncated `ecommerce_test` instead                                                                                |
+
+### Wave 15 — documentation and deployment: PARTIALLY COMPLETE
+
+| Item                                            | Status | Evidence / reason                                                                                                                                           |
+| ----------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D49 OpenAPI + Swagger UI                        | ✅     | `docs/openapi.json` (149 operations, generated; `src/lib/openapi-coverage.test.ts`); Swagger UI at admin `/docs` (HTTP and browser tests, no CSP violation) |
+| ER diagram                                      | ✅     | `docs/er-diagram.svg` regenerated from the current schema (`npm run docs:erd`)                                                                              |
+| README                                          | ✅     | OTP demo note, Swagger, staff, scripts, limitations                                                                                                         |
+| Technical report                                | ✅     | `docs/technical-report.md`; decisions TD-027 to TD-029                                                                                                      |
+| Deploy store and admin (Vercel, Neon, ES trial) | ⛔     | stop conditions 7 and 11: deployment not approved; needs accounts and credentials                                                                           |
+| Final regression on deployed URLs, link check   | ⛔     | depends on deployment                                                                                                                                       |
+| 3–5 min walkthrough video                       | ⛔     | recorded by the owner (plan)                                                                                                                                |
+
+New dependency (minor, reported): `swagger-ui-dist` 5.34.1, exact pin, Apache-2.0 (TD-029); its
+`@scarf/scarf` telemetry install script did not run and is disabled in `package.json`.
+
+New limitations:
+
+| #   | Limitation                                                                                                                                                                  | Where to address             |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| L72 | Product CSV upload creates products only (drafts); updating existing products by CSV is not supported (existing slugs and SKUs are reported)                                | if bulk edits are needed     |
+| L73 | GST export: taxable value per rate re-derives each line's coupon share with the pricing allocation; per-rate values can differ by 1 paise on allocation ties (totals exact) | store the line discount      |
+| L74 | Staff creation has no dedicated rate limit (super admins only) and no forced password change at first sign-in                                                               | with SSO or password rules   |
+| L75 | Swagger UI requires a staff session (API docs are on the admin host)                                                                                                        | publish if reviewers need it |
+| L76 | UI pass incomplete: tablet width and manual keyboard / screen-reader checks not performed                                                                                   | Wave 14 follow-up            |

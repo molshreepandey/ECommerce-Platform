@@ -1,68 +1,19 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { z } from 'zod';
 import { InlineAlert } from '@/components/atoms/InlineAlert';
 import { Text } from '@/components/atoms/Text';
-import { useToast } from '@/components/atoms/Toast';
-import { type ApiFailure, sendJson } from '@/lib/api-client';
+import type { ApiFailure } from '@/lib/api-client';
+import { outcomeIsUnknown, useAdminAction } from '../AdminActions/use-admin-action';
 import { formatQuantity } from './inventory-format';
 
-type Method = 'POST' | 'PUT' | 'PATCH';
+export { outcomeIsUnknown } from '../AdminActions/use-admin-action';
 
-// Calls the admin inventory API, toasts on success and refreshes the server-rendered data. A stale-stock
-// conflict refreshes too, so the dialog shows the current quantity next to the error, and so does a
-// failure that leaves the outcome unknown (network error, 5xx), so the page shows what was saved.
-export function outcomeIsUnknown(failure: ApiFailure): boolean {
-  return failure.status === 0 || (failure.status >= 500 && failure.code !== 'TRANSACTION_TIMEOUT');
-}
+const inventoryRefreshCodes = ['STALE_STOCK'] as const;
 
+// Inventory dialogs: a stale-stock conflict refreshes too, so the dialog shows the current quantity.
 export function useInventoryAction() {
-  const router = useRouter();
-  const { showToast } = useToast();
-  const [isPending, setIsPending] = useState(false);
-  const [failure, setFailure] = useState<ApiFailure | null>(null);
-
-  async function run(
-    request: {
-      url: string;
-      method: Method;
-      body: unknown;
-      idempotencyKey?: string;
-    },
-    successMessage: string,
-  ): Promise<unknown> {
-    setIsPending(true);
-    setFailure(null);
-    const result = await sendJson(request.url, {
-      method: request.method,
-      body: request.body,
-      ...(request.idempotencyKey === undefined
-        ? {}
-        : { headers: { 'Idempotency-Key': request.idempotencyKey } }),
-    });
-    setIsPending(false);
-    if (!result.ok) {
-      setFailure(result.failure);
-      if (result.failure.code === 'STALE_STOCK' || outcomeIsUnknown(result.failure)) {
-        router.refresh();
-      }
-      return null;
-    }
-    showToast({ title: successMessage, tone: 'success' });
-    router.refresh();
-    return result.data ?? {};
-  }
-
-  return {
-    run,
-    isPending,
-    failure,
-    clearFailure: () => {
-      setFailure(null);
-    },
-  };
+  return useAdminAction({ refreshOnFailureCodes: inventoryRefreshCodes });
 }
 
 const staleDetails = z.object({

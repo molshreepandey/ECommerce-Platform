@@ -29,6 +29,17 @@ export function findCustomerProfile(
   return database.customer.findUnique({ where: { id: customerId }, select: customerProfileSelect });
 }
 
+export async function findCustomerPasswordHash(
+  database: DatabaseClient,
+  customerId: string,
+): Promise<string | null> {
+  const row = await database.customer.findUnique({
+    where: { id: customerId },
+    select: { passwordHash: true },
+  });
+  return row?.passwordHash ?? null;
+}
+
 export function updateCustomerProfileRow(
   database: DatabaseClient,
   customerId: string,
@@ -38,5 +49,12 @@ export function updateCustomerProfileRow(
     where: { id: customerId },
     data: changes,
     select: customerProfileSelect,
+  });
+}
+
+export function findCustomerStatusRow(database: DatabaseClient, customerId: string) {
+  return database.customer.findUnique({
+    where: { id: customerId },
+    select: { status: true, email: true, fullName: true, phone: true },
   });
 }

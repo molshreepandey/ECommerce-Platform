@@ -1,7 +1,13 @@
+import path from 'node:path';
+
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  // 'use cache: remote' entries live in Redis and fail open to PostgreSQL (docs/redis-design.md §5.1).
+  cacheHandlers: {
+    remote: path.join(process.cwd(), 'cache-handlers', 'redis-cache-handler.mjs'),
+  },
   partialPrefetching: true,
   poweredByHeader: false,
   // Identical in every environment, so build-time is fine; runtime CSP and HSTS are set in src/proxy.ts.
@@ -19,7 +25,8 @@ const nextConfig: NextConfig = {
     ]);
   },
   outputFileTracingIncludes: {
-    '/*': ['./config/*.json'],
+    '/*': ['./config/*.json', './cache-handlers/*.mjs'],
+    '/api/admin/docs/assets/[file]': ['./node_modules/swagger-ui-dist/swagger-ui-bundle.js'],
   },
   allowedDevOrigins: ['store.localhost', 'admin.localhost'],
   experimental: {

@@ -8,6 +8,7 @@ import { sessionCookieName } from '@/lib/session-cookie';
 import {
   type CustomerContext,
   customerFromSessionToken,
+  optionalCustomerFromSessionToken,
   type StaffContext,
   staffFromSessionToken,
 } from './access-control';
@@ -37,4 +38,8 @@ export async function currentStaffOrRedirect(nextPath: string): Promise<StaffCon
     if (error instanceof DomainError) redirect(signInLocation(nextPath));
     throw error;
   }
+}
+
+export async function currentCustomerOrGuest(): Promise<CustomerContext | null> {
+  return optionalCustomerFromSessionToken(await sessionTokenFromCookies('store'));
 }

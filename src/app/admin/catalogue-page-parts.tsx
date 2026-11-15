@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { EmptyState } from '@/components/atoms/EmptyState';
 import { Link } from '@/components/atoms/Link';
-import { DomainError } from '@/lib/errors';
 
 export function BackLink({ href, label }: Readonly<{ href: string; label: string }>) {
   return (
@@ -31,9 +30,7 @@ export function isUuid(value: string): boolean {
   return z.uuid().safeParse(value).success;
 }
 
-export function isNotFound(error: unknown): boolean {
-  return error instanceof DomainError && error.kind === 'NOT_FOUND';
-}
+export { isNotFoundError as isNotFound } from '@/lib/errors';
 
 // Query strings may repeat a key; pages use the first value only.
 export function firstSearchValues(

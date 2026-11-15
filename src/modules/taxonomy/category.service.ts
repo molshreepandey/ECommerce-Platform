@@ -1,3 +1,4 @@
+import { cacheTags, expireCacheTagsAfterCommit } from '@/lib/cache-tags';
 import {
   foreignKeyViolationConstraintName,
   getDatabase,
@@ -109,7 +110,7 @@ export async function listCategoryTree(staff: StaffContext): Promise<CategoryNod
   }));
 }
 
-export async function createCategory(
+async function applyCreateCategory(
   actor: CatalogueActor,
   input: CreateCategoryInput,
 ): Promise<CategoryRow> {
@@ -144,7 +145,7 @@ export async function createCategory(
 }
 
 // Renaming the slug rewrites the path of the whole subtree, so their products are reindexed too.
-export async function updateCategory(
+async function applyUpdateCategory(
   actor: CatalogueActor,
   categoryId: string,
   input: UpdateCategoryInput,
@@ -188,7 +189,7 @@ export async function updateCategory(
   }
 }
 
-export async function moveCategory(
+async function applyMoveCategory(
   actor: CatalogueActor,
   categoryId: string,
   input: MoveCategoryInput,
@@ -238,7 +239,7 @@ export async function moveCategory(
 
 // Deactivating hides the whole subtree; a category can only be activated under an active parent, so
 // "active" always implies every ancestor is active.
-export async function changeCategoryStatus(
+async function applyChangeCategoryStatus(
   actor: CatalogueActor,
   categoryId: string,
   input: ChangeCategoryStatusInput,
@@ -272,7 +273,7 @@ export async function changeCategoryStatus(
 }
 
 // Only an empty leaf can be deleted (D18); the foreign key from products is the final safeguard.
-export async function deleteCategory(actor: CatalogueActor, categoryId: string): Promise<void> {
+async function applyDeleteCategory(actor: CatalogueActor, categoryId: string): Promise<void> {
   assertStaffPermission(actor.staff, 'taxonomy.write');
   try {
     await getDatabase().$transaction(async (transaction) => {
@@ -293,4 +294,42 @@ export async function deleteCategory(actor: CatalogueActor, categoryId: string):
   } catch (error) {
     rethrowCategoryConflict(error);
   }
+}
+
+// Reference data cached by the storefront ('use cache: remote'): each committed change expires its tag at
+// once; if Redis is unavailable, the cached copy lasts only until its own expiry.
+async function withCategoryCacheExpiry<Result>(change: Promise<Result>): Promise<Result> {
+  const result = await change;
+  await expireCacheTagsAfterCommit([cacheTags.categories]);
+  return result;
+}
+
+export function createCategory(
+  ...args: Parameters<typeof applyCreateCategory>
+): ReturnType<typeof applyCreateCategory> {
+  return withCategoryCacheExpiry(applyCreateCategory(...args));
+}
+
+export function updateCategory(
+  ...args: Parameters<typeof applyUpdateCategory>
+): ReturnType<typeof applyUpdateCategory> {
+  return withCategoryCacheExpiry(applyUpdateCategory(...args));
+}
+
+export function moveCategory(
+  ...args: Parameters<typeof applyMoveCategory>
+): ReturnType<typeof applyMoveCategory> {
+  return withCategoryCacheExpiry(applyMoveCategory(...args));
+}
+
+export function changeCategoryStatus(
+  ...args: Parameters<typeof applyChangeCategoryStatus>
+): ReturnType<typeof applyChangeCategoryStatus> {
+  return withCategoryCacheExpiry(applyChangeCategoryStatus(...args));
+}
+
+export function deleteCategory(
+  ...args: Parameters<typeof applyDeleteCategory>
+): ReturnType<typeof applyDeleteCategory> {
+  return withCategoryCacheExpiry(applyDeleteCategory(...args));
 }

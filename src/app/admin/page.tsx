@@ -9,14 +9,21 @@ import { Spinner } from '@/components/atoms/Spinner';
 import { Text } from '@/components/atoms/Text';
 import { AdminLayout } from '@/components/layouts/AdminLayout';
 import { AdminSessionMenu } from '@/components/organisms/AdminSessionMenu';
+import { DashboardCharts, ReportRangeForm } from '@/components/organisms/ReportsAdmin';
+import { formatPaise } from '@/lib/money';
 import { LowStockTile } from '@/components/organisms/InventoryAdmin';
 import type { StaffContext } from '@/modules/identity/access-control';
 import { currentStaffOrRedirect } from '@/modules/identity/current-session';
 import { getStaffProfile } from '@/modules/identity/staff-account.service';
 import { countLowStock, listLowStock } from '@/modules/inventory/inventory-query.service';
+import {
+  getDashboard,
+  reportRangeSchema,
+  resolveReportRange,
+} from '@/modules/reporting/report.service';
+import { orderStatusAppearance } from '@/theme';
 import { adminNavigationEntries, visibleNavigationItems } from './admin-shell';
-
-const placeholderKpis = ['Orders', 'GMV', 'COD collected', 'Average order value'] as const;
+import { firstSearchValues } from './catalogue-page-parts';
 
 // Shown only to staff who can read inventory (the queries check the permission again).
 async function InventorySummary({ staff }: Readonly<{ staff: StaffContext }>) {
@@ -28,7 +35,66 @@ async function InventorySummary({ staff }: Readonly<{ staff: StaffContext }>) {
   return <LowStockTile totalCount={totalCount} items={firstItems.items} />;
 }
 
-async function AdminDashboard() {
+type SearchParams = Promise<Record<string, string | string[] | undefined>>;
+
+async function SalesOverview({
+  staff,
+  searchParams,
+}: Readonly<{ staff: StaffContext; searchParams: SearchParams }>) {
+  if (!staff.permissionCodes.has('reports.read')) return null;
+  const range = resolveReportRange(reportRangeSchema.parse(firstSearchValues(await searchParams)));
+  const dashboard = await getDashboard(staff, range);
+  const { kpis } = dashboard;
+  const kpiTiles = [
+    { label: 'Orders', value: String(kpis.orderCount) },
+    { label: 'GMV', value: formatPaise(kpis.grossMerchandiseValuePaise) },
+    { label: 'COD collected', value: formatPaise(kpis.codCollectedPaise) },
+    { label: 'Paid online', value: formatPaise(kpis.onlineCollectedPaise) },
+    { label: 'Average order value', value: formatPaise(kpis.averageOrderValuePaise) },
+    { label: 'Cancellations', value: String(kpis.cancelledCount) },
+    { label: 'Returned to origin', value: String(kpis.rtoCount) },
+    { label: 'Return requests', value: String(kpis.returnCount) },
+  ];
+  return (
+    <Flexbox direction="column" gap="lg">
+      <ReportRangeForm action="/" fromDay={range.fromDay} toDay={range.toDay} />
+      <Grid columns={4} gap="lg" as="ul" aria-label="Key figures">
+        {kpiTiles.map((tile) => (
+          <Card as="li" key={tile.label}>
+            <Flexbox direction="column" gap="xs">
+              <Text variant="body3-medium" tone="muted">
+                {tile.label}
+              </Text>
+              <Heading level={2} variant="heading2-5">
+                {tile.value}
+              </Heading>
+            </Flexbox>
+          </Card>
+        ))}
+      </Grid>
+      {kpis.orderCount === 0 ? (
+        <Card padding="none">
+          <EmptyState
+            icon="package"
+            title="No orders in this range"
+            description="Orders placed on the store will appear here."
+          />
+        </Card>
+      ) : (
+        <DashboardCharts
+          ordersByDay={dashboard.ordersByDay}
+          ordersByStatus={dashboard.ordersByStatus.map(({ status, orderCount }) => ({
+            label: orderStatusAppearance[status].label,
+            orderCount,
+          }))}
+          shipmentsByCourier={dashboard.shipmentsByCourier}
+        />
+      )}
+    </Flexbox>
+  );
+}
+
+async function AdminDashboard({ searchParams }: Readonly<{ searchParams: SearchParams }>) {
   const staff = await currentStaffOrRedirect('/');
   const profile = await getStaffProfile(staff);
   const roleNames = profile.roles.map(({ name }) => name).join(', ');
@@ -39,28 +105,8 @@ async function AdminDashboard() {
       headerActions={<AdminSessionMenu fullName={profile.fullName} roleNames={roleNames} />}
     >
       <Flexbox direction="column" gap="xl">
-        <Grid columns={4} gap="lg" as="ul">
-          {placeholderKpis.map((kpiLabel) => (
-            <Card as="li" key={kpiLabel}>
-              <Flexbox direction="column" gap="xs">
-                <Text variant="body3-medium" tone="muted">
-                  {kpiLabel}
-                </Text>
-                <Heading level={2} variant="heading2-5">
-                  —
-                </Heading>
-              </Flexbox>
-            </Card>
-          ))}
-        </Grid>
+        <SalesOverview staff={staff} searchParams={searchParams} />
         <InventorySummary staff={staff} />
-        <Card padding="none">
-          <EmptyState
-            icon="package"
-            title="No orders yet"
-            description="Orders placed on the store will appear here."
-          />
-        </Card>
         <Card as="section">
           <Flexbox direction="column" gap="md">
             <Heading level={2} variant="heading4">
@@ -83,7 +129,9 @@ async function AdminDashboard() {
   );
 }
 
-export default function AdminDashboardPage() {
+export default function AdminDashboardPage({
+  searchParams,
+}: Readonly<{ searchParams: SearchParams }>) {
   return (
     <Suspense
       fallback={
@@ -92,7 +140,7 @@ export default function AdminDashboardPage() {
         </div>
       }
     >
-      <AdminDashboard />
+      <AdminDashboard searchParams={searchParams} />
     </Suspense>
   );
 }

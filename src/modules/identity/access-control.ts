@@ -91,3 +91,21 @@ export async function requirePermission(
 export function assertStaffPermission(staff: StaffContext, permissionCode: PermissionCode): void {
   if (!staff.permissionCodes.has(permissionCode)) throw new PermissionDeniedError(permissionCode);
 }
+
+// Store routes and pages that also serve guests (the cart): a missing, expired or revoked session is a guest.
+export async function optionalCustomerFromSessionToken(
+  sessionToken: string | null,
+): Promise<CustomerContext | null> {
+  if (sessionToken === null) return null;
+  try {
+    return await customerFromSessionToken(sessionToken);
+  } catch (error) {
+    if (error instanceof UnauthenticatedError || error instanceof WrongAccountTypeError)
+      return null;
+    throw error;
+  }
+}
+
+export function optionalCustomer(request: NextRequest): Promise<CustomerContext | null> {
+  return optionalCustomerFromSessionToken(readSessionToken(request, 'store'));
+}

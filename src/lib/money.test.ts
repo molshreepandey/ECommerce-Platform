@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { InvalidMoneyAmountError, Money } from '@/lib/money';
+import {
+  formatPaise,
+  InvalidMoneyAmountError,
+  Money,
+  paiseToRupeesText,
+  rupeesTextToPaise,
+} from '@/lib/money';
 
 describe('Money', () => {
   it('accepts integer paise and rejects fractions or unsafe integers', () => {
@@ -40,5 +46,30 @@ describe('Money', () => {
   it('formats paise as Indian rupees', () => {
     expect(Money.formatRupees(Money.fromPaise(12_345_678))).toBe('₹1,23,456.78');
     expect(Money.formatRupees(Money.zero)).toBe('₹0.00');
+  });
+});
+
+describe('rupee text', () => {
+  it('parses whole and fractional rupees into paise without floating point', () => {
+    expect(rupeesTextToPaise('499')).toBe(49900);
+    expect(rupeesTextToPaise(' 499.5 ')).toBe(49950);
+    expect(rupeesTextToPaise('0.07')).toBe(7);
+    expect(rupeesTextToPaise('1.10')).toBe(110);
+  });
+
+  it('refuses anything that is not a plain rupee amount', () => {
+    for (const text of ['', '-1', '1.234', 'abc', '1e3', '₹10', '1,000']) {
+      expect(rupeesTextToPaise(text)).toBeNull();
+    }
+  });
+
+  it('formats paise back to the same text', () => {
+    expect(paiseToRupeesText(49900)).toBe('499');
+    expect(paiseToRupeesText(49950)).toBe('499.50');
+    expect(paiseToRupeesText(7)).toBe('0.07');
+  });
+
+  it('formats INR in the Indian locale', () => {
+    expect(formatPaise(12345678)).toBe('₹1,23,456.78');
   });
 });

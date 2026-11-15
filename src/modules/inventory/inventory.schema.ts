@@ -104,6 +104,30 @@ export const receiveStockSchema = z.strictObject({
 });
 export type ReceiveStockInput = z.infer<typeof receiveStockSchema>;
 
+// D27: move available units of up to 100 variants from one warehouse to another in one transaction.
+// Lines are sorted by variant, so the same transfer always has the same fingerprint and lock order.
+export const transferStockSchema = z
+  .strictObject({
+    fromWarehouseId: lowerCaseWarehouseIdSchema,
+    toWarehouseId: lowerCaseWarehouseIdSchema,
+    reason: stockReasonSchema,
+    lines: z
+      .array(z.strictObject({ variantId: lowerCaseVariantIdSchema, quantity: stockQuantitySchema }))
+      .min(1, 'Add at least one line')
+      .max(maximumLinesPerRequest)
+      .refine((lines) => new Set(lines.map(({ variantId }) => variantId)).size === lines.length, {
+        message: 'Each variant once',
+      })
+      .transform((lines) =>
+        [...lines].sort((left, right) => left.variantId.localeCompare(right.variantId)),
+      ),
+  })
+  .refine((transfer) => transfer.fromWarehouseId !== transfer.toWarehouseId, {
+    message: 'Choose a different destination warehouse',
+    path: ['toWarehouseId'],
+  });
+export type TransferStockInput = z.infer<typeof transferStockSchema>;
+
 export const setLowStockThresholdSchema = z.strictObject({
   variantId: lowerCaseVariantIdSchema,
   warehouseId: lowerCaseWarehouseIdSchema,

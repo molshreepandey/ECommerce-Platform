@@ -13,7 +13,12 @@ import type {
   StockVariantView,
   WarehouseChoice,
 } from './inventory-types';
-import { AdjustStockDialog, ReceiveStockDialog, ThresholdDialog } from './StockDialogs';
+import {
+  AdjustStockDialog,
+  ReceiveStockDialog,
+  ThresholdDialog,
+  TransferStockDialog,
+} from './StockDialogs';
 
 const stateBadges: Record<StockState, { tone: BadgeTone; label: string }> = {
   out: { tone: 'danger', label: 'out of stock' },
@@ -24,7 +29,8 @@ const stateBadges: Record<StockState, { tone: BadgeTone; label: string }> = {
 type Dialog =
   | { kind: 'adjust'; variant: StockVariantView }
   | { kind: 'threshold'; variant: StockVariantView }
-  | { kind: 'receive'; product: StockProductView };
+  | { kind: 'receive'; product: StockProductView }
+  | { kind: 'transfer'; product: StockProductView };
 
 function LevelRow({ level }: Readonly<{ level: StockLevelView }>) {
   const badge = stateBadges[stockState(level)];
@@ -54,6 +60,18 @@ function LevelRow({ level }: Readonly<{ level: StockLevelView }>) {
       </dl>
     </li>
   );
+}
+
+// The transfer dialog starts from the warehouse holding most of this product's available units.
+function fullestWarehouseOf(product: StockProductView): string | undefined {
+  const availableByWarehouse = new Map<string, number>();
+  for (const level of product.variants.flatMap(({ levels }) => levels)) {
+    availableByWarehouse.set(
+      level.warehouseId,
+      (availableByWarehouse.get(level.warehouseId) ?? 0) + level.availableQuantity,
+    );
+  }
+  return [...availableByWarehouse].sort(([, left], [, right]) => right - left)[0]?.[0];
 }
 
 // Variant × warehouse stock for one page of products. Write buttons exist only for staff who may change
@@ -119,16 +137,29 @@ export function StockMatrix({
                 )}
               </div>
               {canWrite && warehouses.length > 0 ? (
-                <Button
-                  size="sm"
-                  iconBefore="inbox"
-                  aria-label={`Receive stock for ${product.productName}`}
-                  onClick={() => {
-                    setDialog({ kind: 'receive', product });
-                  }}
-                >
-                  Receive stock
-                </Button>
+                <div className="flex flex-wrap gap-sm">
+                  <Button
+                    size="sm"
+                    iconBefore="inbox"
+                    aria-label={`Receive stock for ${product.productName}`}
+                    onClick={() => {
+                      setDialog({ kind: 'receive', product });
+                    }}
+                  >
+                    Receive stock
+                  </Button>
+                  {warehouses.length > 1 ? (
+                    <Button
+                      size="sm"
+                      aria-label={`Transfer stock for ${product.productName}`}
+                      onClick={() => {
+                        setDialog({ kind: 'transfer', product });
+                      }}
+                    >
+                      Transfer stock
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
             </div>
             <ul aria-label={`Variants of ${product.productName}`} className="flex flex-col gap-md">
@@ -218,6 +249,16 @@ export function StockMatrix({
           isStale={currentVariant(dialog.variant.variantId) === undefined}
           warehouses={dialogWarehouses}
           defaultWarehouseId={warehouseFor(dialog.variant)}
+          onClose={close}
+        />
+      ) : null}
+      {dialog?.kind === 'transfer' ? (
+        <TransferStockDialog
+          key={`transfer-${dialog.product.productId}`}
+          product={dialog.product}
+          warehouses={warehouses}
+          defaultWarehouseId={fullestWarehouseOf(dialog.product) ?? defaultWarehouseId}
+          keeper={keeperFor(`transfer/${dialog.product.productId}`)}
           onClose={close}
         />
       ) : null}

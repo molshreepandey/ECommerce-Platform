@@ -169,3 +169,11 @@ export async function productIdsInSubtree(
   );
   return rows.map(({ id }) => id);
 }
+
+// Proxy check (unique slug index). Active implies every ancestor is active (category.service rule).
+export async function activeCategorySlugExists(
+  database: DatabaseClient,
+  slug: string,
+): Promise<boolean> {
+  return (await database.category.count({ where: { slug, isActive: true } })) > 0;
+}

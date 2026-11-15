@@ -48,6 +48,38 @@
     "inventory-write": {
       "maxRequests": 60,
       "windowSeconds": 60
+    },
+    "checkout": {
+      "maxRequests": 10,
+      "windowSeconds": 60
+    },
+    "payment-attempt": {
+      "maxRequests": 10,
+      "windowSeconds": 60
+    },
+    "cart-write": {
+      "maxRequests": 120,
+      "windowSeconds": 60
+    },
+    "otp-request": {
+      "maxRequests": 5,
+      "windowSeconds": 600
+    },
+    "otp-verify": {
+      "maxRequests": 20,
+      "windowSeconds": 600
+    },
+    "staff-write": {
+      "maxRequests": 30,
+      "windowSeconds": 60
+    },
+    "public-search": {
+      "maxRequests": 120,
+      "windowSeconds": 60
+    },
+    "review-write": {
+      "maxRequests": 10,
+      "windowSeconds": 3600
     }
   },
   "security": {
@@ -70,5 +102,8 @@
       "timeCost": 2,
       "parallelism": 1
     }
+  },
+  "featureFlags": {
+    "enableDistanceAllocation": true
   }
 }

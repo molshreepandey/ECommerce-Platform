@@ -5,6 +5,12 @@ import {
 } from '@/modules/catalogue/catalogue.errors';
 
 export const taxonomyErrors = {
+  tooManyToRecategorise: (productCount: number, maximum: number) =>
+    new CatalogueUnprocessableError(
+      'TOO_MANY_PRODUCTS',
+      `This category has more than ${String(maximum)} products to move at once.`,
+      { productCount, maximum },
+    ),
   categoryNotFound: () =>
     new DomainError({
       kind: 'NOT_FOUND',

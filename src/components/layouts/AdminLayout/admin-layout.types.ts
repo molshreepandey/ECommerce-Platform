@@ -5,6 +5,8 @@ export type AdminNavigationItem = Readonly<{
   label: string;
   href: string;
   icon: IconName;
+  // Sidebar heading for a run of related items (desktop only).
+  section?: string;
 }>;
 
 export type AdminSidenavProps = Readonly<{

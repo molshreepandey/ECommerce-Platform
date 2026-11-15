@@ -1,3 +1,4 @@
+import { cacheTags, expireCacheTagsAfterCommit } from '@/lib/cache-tags';
 import { getDatabase, isUniqueViolation, uniqueViolationConstraintName } from '@/lib/db';
 import type { DatabaseClient } from '@/lib/db';
 import { assertStaffPermission, type StaffContext } from '@/modules/identity/access-control';
@@ -107,7 +108,7 @@ export async function getProductType(
   };
 }
 
-export async function createProductType(
+async function applyCreateProductType(
   actor: CatalogueActor,
   input: CreateProductTypeInput,
 ): Promise<ProductTypeRow> {
@@ -132,7 +133,7 @@ export async function createProductType(
   }
 }
 
-export async function updateProductType(
+async function applyUpdateProductType(
   actor: CatalogueActor,
   productTypeId: string,
   input: UpdateProductTypeInput,
@@ -158,7 +159,7 @@ export async function updateProductType(
   });
 }
 
-export async function archiveProductType(
+async function applyArchiveProductType(
   actor: CatalogueActor,
   productTypeId: string,
 ): Promise<ProductTypeRow> {
@@ -181,7 +182,7 @@ export async function archiveProductType(
   });
 }
 
-export async function restoreProductType(
+async function applyRestoreProductType(
   actor: CatalogueActor,
   productTypeId: string,
 ): Promise<ProductTypeRow> {
@@ -210,7 +211,7 @@ async function countMissingValues(
     : countVariantsMissingOption(transaction, target);
 }
 
-export async function createAttributeDefinition(
+async function applyCreateAttributeDefinition(
   actor: CatalogueActor,
   productTypeId: string,
   input: CreateAttributeDefinitionInput,
@@ -296,7 +297,7 @@ async function lockDefinitionForChange(
   return existing;
 }
 
-export async function updateAttributeDefinition(
+async function applyUpdateAttributeDefinition(
   actor: CatalogueActor,
   attributeDefinitionId: string,
   input: UpdateAttributeDefinitionInput,
@@ -325,7 +326,7 @@ export async function updateAttributeDefinition(
   });
 }
 
-export async function archiveAttributeDefinition(
+async function applyArchiveAttributeDefinition(
   actor: CatalogueActor,
   attributeDefinitionId: string,
 ): Promise<AttributeDefinitionRow> {
@@ -348,4 +349,54 @@ export async function archiveAttributeDefinition(
     await enqueueProductsOfType(transaction, existing.productTypeId);
     return archived;
   });
+}
+
+// Reference data cached by the storefront ('use cache: remote'): each committed change expires its tag at
+// once; if Redis is unavailable, the cached copy lasts only until its own expiry.
+async function withProductTypeCacheExpiry<Result>(change: Promise<Result>): Promise<Result> {
+  const result = await change;
+  await expireCacheTagsAfterCommit([cacheTags.productTypes]);
+  return result;
+}
+
+export function createProductType(
+  ...args: Parameters<typeof applyCreateProductType>
+): ReturnType<typeof applyCreateProductType> {
+  return withProductTypeCacheExpiry(applyCreateProductType(...args));
+}
+
+export function updateProductType(
+  ...args: Parameters<typeof applyUpdateProductType>
+): ReturnType<typeof applyUpdateProductType> {
+  return withProductTypeCacheExpiry(applyUpdateProductType(...args));
+}
+
+export function archiveProductType(
+  ...args: Parameters<typeof applyArchiveProductType>
+): ReturnType<typeof applyArchiveProductType> {
+  return withProductTypeCacheExpiry(applyArchiveProductType(...args));
+}
+
+export function restoreProductType(
+  ...args: Parameters<typeof applyRestoreProductType>
+): ReturnType<typeof applyRestoreProductType> {
+  return withProductTypeCacheExpiry(applyRestoreProductType(...args));
+}
+
+export function createAttributeDefinition(
+  ...args: Parameters<typeof applyCreateAttributeDefinition>
+): ReturnType<typeof applyCreateAttributeDefinition> {
+  return withProductTypeCacheExpiry(applyCreateAttributeDefinition(...args));
+}
+
+export function updateAttributeDefinition(
+  ...args: Parameters<typeof applyUpdateAttributeDefinition>
+): ReturnType<typeof applyUpdateAttributeDefinition> {
+  return withProductTypeCacheExpiry(applyUpdateAttributeDefinition(...args));
+}
+
+export function archiveAttributeDefinition(
+  ...args: Parameters<typeof applyArchiveAttributeDefinition>
+): ReturnType<typeof applyArchiveAttributeDefinition> {
+  return withProductTypeCacheExpiry(applyArchiveAttributeDefinition(...args));
 }

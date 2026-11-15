@@ -2,6 +2,7 @@
 
 import { cva } from 'class-variance-authority';
 import { Dialog as RadixDialog } from 'radix-ui';
+import { useRef } from 'react';
 import { focusRingClassNames } from '../focus-ring';
 import { Icon } from '../Icon';
 import type { ModalProps } from './modal.types';
@@ -24,12 +25,25 @@ export function Modal({
   children,
   ...dialogRootProps
 }: ModalProps) {
+  // Radix returns focus only to a Dialog.Trigger; most dialogs here open from state, so the element that
+  // had focus when the dialog opened gets it back on close (WCAG 2.4.3), if it is still on the page.
+  const returnFocusTo = useRef<HTMLElement | null>(null);
   return (
     <RadixDialog.Root {...dialogRootProps}>
       {trigger === undefined ? null : <RadixDialog.Trigger asChild>{trigger}</RadixDialog.Trigger>}
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="fixed inset-0 z-40 bg-headings/60" />
         <RadixDialog.Content
+          onOpenAutoFocus={() => {
+            returnFocusTo.current =
+              document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          }}
+          onCloseAutoFocus={(event) => {
+            const target = returnFocusTo.current;
+            if (trigger !== undefined || target === null || !target.isConnected) return;
+            event.preventDefault();
+            target.focus();
+          }}
           className={modalContentClassNames({ size })}
           {...(description === undefined ? { 'aria-describedby': undefined } : {})}
         >

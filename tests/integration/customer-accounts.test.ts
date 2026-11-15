@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { getConfig } from '@/lib/config';
 import { getDatabase } from '@/lib/db';
+import { DomainError } from '@/lib/errors';
 import { RateLimitExceededError } from '@/lib/rate-limit/rate-limit';
 import { requireCustomer } from '@/modules/identity/access-control';
 import {
@@ -15,6 +16,7 @@ import {
   EmailAlreadyRegisteredError,
   InvalidCredentialsError,
   PhoneAlreadyRegisteredError,
+  UnauthenticatedError,
 } from '@/modules/identity/identity.errors';
 import {
   loginSchema,
@@ -314,11 +316,64 @@ describe('customer profile', () => {
     );
     const context = await requireCustomer(storeRequest(session.sessionToken));
     await expect(
-      updateCustomerProfile(context, { phone: '9876501003' }, testMetadata()),
+      updateCustomerProfile(
+        context,
+        { phone: '9876501003', currentPassword: password },
+        testMetadata(),
+      ),
     ).rejects.toBeInstanceOf(PhoneAlreadyRegisteredError);
     expect((await getCustomerProfile(context)).phone).toBe('9876501000');
     expect(await database.auditLog.count({ where: { action: 'customer.profile_updated' } })).toBe(
       0,
     );
+  });
+
+  it('changes the phone only with the current password and signs out other sessions (M2)', async () => {
+    const { session } = await registerCustomer(registration(), testMetadata());
+    const other = await loginCustomer(
+      { email: 'priya.nair@example.test', password },
+      testMetadata(),
+    );
+    const context = await requireCustomer(storeRequest(session.sessionToken));
+    const refusal = (promise: Promise<unknown>) =>
+      promise.then(
+        () => null,
+        (error: unknown) => (error instanceof DomainError ? error.code : String(error)),
+      );
+    expect(
+      await refusal(updateCustomerProfile(context, { phone: '9876501009' }, testMetadata())),
+    ).toBe('CURRENT_PASSWORD_REQUIRED');
+    expect(
+      await refusal(
+        updateCustomerProfile(
+          context,
+          { phone: '9876501009', currentPassword: 'Wrong-Password-2026' },
+          testMetadata(),
+        ),
+      ),
+    ).toBe('CURRENT_PASSWORD_INCORRECT');
+    expect((await getCustomerProfile(context)).phone).toBe('9876501000');
+    // A name-only change still needs no password.
+    await updateCustomerProfile(context, { fullName: 'Priya R. Nair' }, testMetadata());
+
+    await updateCustomerProfile(
+      context,
+      { phone: '9876501009', currentPassword: password },
+      testMetadata(),
+    );
+    expect((await getCustomerProfile(context)).phone).toBe('9876501009');
+    // The other device is signed out; this one stays signed in.
+    await expect(requireCustomer(storeRequest(other.session.sessionToken))).rejects.toBeInstanceOf(
+      UnauthenticatedError,
+    );
+    await requireCustomer(storeRequest(session.sessionToken));
+    const audit = await database.auditLog.findFirstOrThrow({
+      where: {
+        action: 'customer.profile_updated',
+        after: { path: ['phone'], equals: '9876501009' },
+      },
+    });
+    expect(audit.after).toEqual({ phone: '9876501009', endedLogins: 1 });
+    await expectAuditTrailFreeOf([password, session.sessionToken]);
   });
 });

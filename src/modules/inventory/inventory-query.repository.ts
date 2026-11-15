@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { Prisma } from '@/generated/prisma/client';
 import type { DatabaseClient } from '@/lib/db';
 
-import { countedStockWhere } from './stock-availability';
+import { countedStockWhere, sellableStockWhere } from './stock-availability';
 
 // Read-only queries: no row locks, no writes.
 
@@ -236,4 +236,18 @@ export async function movementCursorExists(
   movementId: string,
 ): Promise<boolean> {
   return (await database.inventoryMovement.count({ where: { id: movementId } })) > 0;
+}
+
+// Allocation read for checkout (plan §6): one query for every cart variant, active warehouses only, rows
+// with something available. Unlocked: the reservation's guarded update re-checks each row.
+export function findAllocatableStockRows(database: DatabaseClient, variantIds: readonly string[]) {
+  return database.inventoryLevel.findMany({
+    where: { variantId: { in: [...variantIds] }, ...sellableStockWhere },
+    select: {
+      variantId: true,
+      warehouseId: true,
+      availableQuantity: true,
+      warehouse: { select: { priority: true, pincode: true } },
+    },
+  });
 }

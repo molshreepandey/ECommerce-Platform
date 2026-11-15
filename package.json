@@ -10,7 +10,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint --max-warnings 0",
+    "lint": "next typegen && eslint --max-warnings 0",
     "typecheck": "next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -29,7 +29,11 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "start:test": "tsx scripts/start-test-server.ts",
     "start:test:dev": "tsx scripts/start-test-server.ts --dev",
-    "db:seed:demo-passwords": "tsx prisma/seed/demo-passwords.ts"
+    "db:seed:demo-passwords": "tsx prisma/seed/demo-passwords.ts",
+    "search:sync": "tsx scripts/search-sync.ts",
+    "search:reindex": "tsx scripts/search-reindex.ts",
+    "orders:expire-unpaid": "tsx scripts/expire-unpaid-orders.ts",
+    "docs:openapi": "tsx scripts/generate-openapi.ts && prettier --write docs/openapi.json"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
@@ -48,6 +52,7 @@
     "react-chartjs-2": "^5.3.1",
     "react-dom": "19.3.0",
     "redis": "6.3.1",
+    "swagger-ui-dist": "5.34.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -80,5 +85,8 @@
     "prisma@7.10.1": true,
     "puppeteer@25.16.0": true,
     "fsevents": false
+  },
+  "scarfSettings": {
+    "enabled": false
   }
 }

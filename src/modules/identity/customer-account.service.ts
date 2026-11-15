@@ -1,4 +1,9 @@
-import { getDatabase, isUniqueViolation, uniqueViolationConstraintName } from '@/lib/db';
+import {
+  type DatabaseClient,
+  getDatabase,
+  isUniqueViolation,
+  uniqueViolationConstraintName,
+} from '@/lib/db';
 import { enforceRateLimit } from '@/lib/rate-limit/rate-limit';
 import { recordAuditEvent } from '@/modules/audit/audit.service';
 
@@ -7,7 +12,9 @@ import { refusedDemoCredentialField, ReservedDemoCredentialError } from './demo-
 import {
   type CustomerProfile,
   findCustomerCredentialsByEmail,
+  findCustomerPasswordHash,
   findCustomerProfile,
+  findCustomerStatusRow,
   insertCustomer,
   updateCustomerProfileRow,
 } from './customer-account.repository';
@@ -15,11 +22,12 @@ import {
   EmailAlreadyRegisteredError,
   InvalidCredentialsError,
   PhoneAlreadyRegisteredError,
+  profileErrors,
   UnauthenticatedError,
 } from './identity.errors';
 import type { LoginInput, RegisterCustomerInput, UpdateProfileInput } from './identity.schema';
 import { hashPassword, verifyAgainstDummyHash, verifyPassword } from './password-hasher';
-import { revokeAllSessionsForSubject } from './session.repository';
+import { revokeAllSessionsForSubject, revokeOtherSessionsForSubject } from './session.repository';
 import { type StartedSession, startSession } from './session.service';
 
 const unknownClient = 'unknown-client';
@@ -125,11 +133,33 @@ export async function getCustomerProfile(customer: CustomerContext): Promise<Cus
   return profile;
 }
 
+// M2: re-authentication before the phone (an OTP login key) changes, so a stolen session cannot move
+// OTP access to another number. Wrong guesses share the per-account sign-in budget.
+async function confirmCurrentPassword(
+  customer: CustomerContext,
+  currentPassword: string | undefined,
+): Promise<void> {
+  if (currentPassword === undefined) throw profileErrors.currentPasswordRequired();
+  await enforceRateLimit({
+    action: 'customer-login',
+    identifier: `reauthenticate|${customer.customerId}`,
+  });
+  const passwordHash = await findCustomerPasswordHash(getDatabase(), customer.customerId);
+  if (passwordHash === null) throw new UnauthenticatedError();
+  if (!(await verifyPassword(passwordHash, currentPassword))) {
+    throw profileErrors.currentPasswordIncorrect();
+  }
+}
+
 export async function updateCustomerProfile(
   customer: CustomerContext,
   input: UpdateProfileInput,
   metadata: RequestMetadata,
 ): Promise<CustomerProfile> {
+  const current = await findCustomerProfile(getDatabase(), customer.customerId);
+  if (current === null) throw new UnauthenticatedError();
+  const isPhoneChange = input.phone !== undefined && input.phone !== current.phone;
+  if (isPhoneChange) await confirmCurrentPassword(customer, input.currentPassword);
   try {
     return await getDatabase().$transaction(async (transaction) => {
       const before = await findCustomerProfile(transaction, customer.customerId);
@@ -144,6 +174,15 @@ export async function updateCustomerProfile(
       };
       if (Object.keys(changes).length === 0) return before;
       const after = await updateCustomerProfileRow(transaction, customer.customerId, changes);
+      // M2: the phone is an OTP login key, so a new phone signs out every other session.
+      const endedLogins =
+        'phone' in changes
+          ? await revokeOtherSessionsForSubject(
+              transaction,
+              { subjectType: 'CUSTOMER', subjectId: customer.customerId },
+              customer.sessionId,
+            )
+          : 0;
       await recordAuditEvent(transaction, {
         actorType: 'CUSTOMER',
         actorId: customer.customerId,
@@ -154,7 +193,7 @@ export async function updateCustomerProfile(
           ...('fullName' in changes ? { fullName: before.fullName } : {}),
           ...('phone' in changes ? { phone: before.phone } : {}),
         },
-        after: changes,
+        after: 'phone' in changes ? { ...changes, endedLogins } : changes,
         ipAddress: metadata.clientIp,
         requestId: metadata.requestId,
       });
@@ -163,4 +202,12 @@ export async function updateCustomerProfile(
   } catch (error) {
     throw toConflictError(error);
   }
+}
+
+// Checkout refuses a blocked customer with 403 even while an older session is still valid (plan §10A).
+export async function isCustomerBlocked(
+  database: DatabaseClient,
+  customerId: string,
+): Promise<boolean> {
+  return (await findCustomerStatusRow(database, customerId))?.status !== 'ACTIVE';
 }
