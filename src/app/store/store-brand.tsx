@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import { connection } from 'next/server';
+import { Icon } from '@/components/atoms/Icon';
 import { Link } from '@/components/atoms/Link';
 import { getStoreBranding } from '@/modules/merchandising/store-branding.cache';
 
@@ -20,7 +21,11 @@ export async function StoreBrand() {
         aria-label={`${branding.storeName} home`}
       >
         <span className="inline-flex items-center gap-sm">
-          {branding.logoUrl === null ? null : (
+          {branding.logoUrl === null ? (
+            <span className="inline-flex size-8 items-center justify-center rounded-card bg-linear-to-br from-primary-gradient-1 to-primary-gradient-2 text-white">
+              <Icon name="store" size="sm" />
+            </span>
+          ) : (
             <Image
               src={branding.logoUrl}
               alt=""
@@ -30,7 +35,7 @@ export async function StoreBrand() {
               unoptimized
             />
           )}
-          {branding.storeName}
+          <span className="text-heading2-5 tracking-tight">{branding.storeName}</span>
         </span>
       </Link>
     </>

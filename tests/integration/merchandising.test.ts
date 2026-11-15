@@ -298,7 +298,7 @@ describe('store branding (D52)', () => {
   it('saves name, logo and colour with an audit row, and refuses a logo from another host', async () => {
     const staff = await orderStaff(['merchandising.write']);
     expect(await loadStoreBranding()).toEqual({
-      storeName: 'Demo Store',
+      storeName: 'ShopSphere',
       logoUrl: null,
       primaryColour: null,
     });

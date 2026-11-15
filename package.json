@@ -30,6 +30,7 @@
     "start:test": "tsx scripts/start-test-server.ts",
     "start:test:dev": "tsx scripts/start-test-server.ts --dev",
     "db:seed:demo-passwords": "tsx prisma/seed/demo-passwords.ts",
+    "db:seed:catalogue": "tsx scripts/seed-demo-catalogue.ts",
     "search:sync": "tsx scripts/search-sync.ts",
     "search:reindex": "tsx scripts/search-reindex.ts",
     "orders:expire-unpaid": "tsx scripts/expire-unpaid-orders.ts",

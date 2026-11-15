@@ -62,13 +62,14 @@ and how its proxy sets `X-Forwarded-For` (for `trustedProxyHopCount`).
 
 Behaviour that differs by `APP_ENV` (choose deliberately):
 
-| Feature                      | development / test | staging                               | production         |
-| ---------------------------- | ------------------ | ------------------------------------- | ------------------ |
-| Demo accounts and seed       | allowed            | refused                               | refused            |
-| Simulated online payment     | on                 | on                                    | **off** (COD only) |
-| OTP shown in the login popup | on                 | on (unless `OTP_DISPLAY_IN_UI=false`) | **never**          |
-| Secure `__Host-` cookies     | no                 | yes                                   | yes                |
-| `COURIER_WEBHOOK_SECRET`     | optional           | **required**                          | **required**       |
+| Feature                                   | development / test | staging                                        | production         |
+| ----------------------------------------- | ------------------ | ---------------------------------------------- | ------------------ |
+| Demo accounts and seed                    | allowed            | refused                                        | refused            |
+| Demo catalogue only (`db:seed:catalogue`) | allowed            | opt-in (`CONFIRM_DEMO_CATALOGUE_SEED=staging`) | refused            |
+| Simulated online payment                  | on                 | on                                             | **off** (COD only) |
+| OTP shown in the login popup              | on                 | on (unless `OTP_DISPLAY_IN_UI=false`)          | **never**          |
+| Secure `__Host-` cookies                  | no                 | yes                                            | yes                |
+| `COURIER_WEBHOOK_SECRET`                  | optional           | **required**                                   | **required**       |
 
 For an evaluator-facing hosted demo, `staging` keeps the simulated gateway and the OTP popup.
 
@@ -98,9 +99,21 @@ Never reuse the local placeholder credentials from `.env.example`.
 5. Start: `npm run start`. Check `GET https://<store-host>/api/health` returns 200.
 6. Create the first super admin once:
    `FIRST_ADMIN_NAME=… FIRST_ADMIN_EMAIL=… FIRST_ADMIN_PASSWORD=… npm run admin:create-first`, then
-   remove `FIRST_ADMIN_PASSWORD`; sign in on the admin host, load the catalogue (CSV import),
-   then `npm run search:reindex` once if Elasticsearch is used.
-7. Verify the proxy hop count (blocker 3), store and admin journeys, and that the admin API answers 404 on
+   remove `FIRST_ADMIN_PASSWORD`; sign in on the admin host.
+7. Load a catalogue: either import your own (admin CSV import), or, for a staging demo, the demo catalogue
+   (40 products, 193 variants, images, collections, banners, 3 warehouses with opening stock; no accounts,
+   customers, orders, settings or passwords). From a machine with the Railway **public** connection URLs:
+
+   ```bash
+   APP_ENV=staging CONFIRM_DEMO_CATALOGUE_SEED=staging \
+   DATABASE_URL='<Postgres DATABASE_PUBLIC_URL>' REDIS_URL='<Redis REDIS_PUBLIC_URL>' \
+   npm run db:seed:catalogue
+   ```
+
+   One transaction; a second run writes nothing; refused if the catalogue is only partly present, and
+   always refused in production. Then `npm run search:reindex` once if Elasticsearch is used.
+
+8. Verify the proxy hop count (blocker 3), store and admin journeys, and that the admin API answers 404 on
    the store host.
 
 ## Changing a setting without rebuilding

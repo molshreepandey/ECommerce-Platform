@@ -38,14 +38,18 @@ const warehouseSeeds = [
 
 export type WarehouseCode = (typeof warehouseSeeds)[number]['code'];
 
-export async function seedWarehouses(client: SeedClient): Promise<Map<WarehouseCode, string>> {
+// updateExisting false: a warehouse that already exists with a seeded code is left exactly as it is.
+export async function seedWarehouses(
+  client: SeedClient,
+  { updateExisting = true }: { updateExisting?: boolean } = {},
+): Promise<Map<WarehouseCode, string>> {
   const warehouseIdByCode = new Map<WarehouseCode, string>();
   for (const warehouseSeed of warehouseSeeds) {
     const { code, ...warehouseFields } = warehouseSeed;
     const warehouse = await client.warehouse.upsert({
       where: { code },
       create: { code, ...warehouseFields, isActive: true },
-      update: warehouseFields,
+      update: updateExisting ? warehouseFields : {},
       select: { id: true },
     });
     warehouseIdByCode.set(code, warehouse.id);

@@ -14,7 +14,7 @@ export const storeBrandingSchema = z.strictObject({
 export type StoreBranding = z.infer<typeof storeBrandingSchema>;
 
 export const defaultStoreBranding: StoreBranding = {
-  storeName: 'Demo Store',
+  storeName: 'ShopSphere',
   logoUrl: null,
   primaryColour: null,
 };

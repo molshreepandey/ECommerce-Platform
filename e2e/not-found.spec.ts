@@ -12,9 +12,9 @@ test.describe('store not-found page', () => {
       );
 
       expect(status).toBe(404);
-      await expect(page).toHaveTitle('Page not found · Demo Store');
+      await expect(page).toHaveTitle('Page not found · ShopSphere');
       await expect(page.getByRole('heading', { level: 1, name: 'Page not found' })).toBeVisible();
-      await expect(page.getByRole('banner').getByText('Demo Store')).toBeVisible();
+      await expect(page.getByRole('banner').getByText('ShopSphere')).toBeVisible();
       await expect(page.getByRole('link', { name: 'Back to the store' })).toBeVisible();
       await expect(page.getByText('This admin page does not exist')).toHaveCount(0);
       await expect(page.getByRole('status', { name: 'Loading' })).toHaveCount(0);
@@ -28,7 +28,7 @@ test.describe('store not-found page', () => {
     await page.getByRole('link', { name: 'Back to the store' }).click();
 
     await expect(page).toHaveURL(`${storeOrigin}/`);
-    await expect(page).toHaveTitle('Demo Store');
+    await expect(page).toHaveTitle('ShopSphere');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText(
       'Everyday essentials, delivered',
     );

@@ -1,15 +1,20 @@
 import Image from 'next/image';
+import NextLink from 'next/link';
 import { Badge } from '@/components/atoms/Badge';
+import { focusRingClassNames } from '@/components/atoms/focus-ring';
 import { Icon } from '@/components/atoms/Icon';
-import { Link } from '@/components/atoms/Link';
-import { Text } from '@/components/atoms/Text';
+import { Text, textClassNames } from '@/components/atoms/Text';
+import { discountPercent } from '../PriceTag/discount';
 import { PriceTag } from '../PriceTag';
 import type { ProductCardProps } from './product-card.types';
 
+// The whole card opens the product page: the name link stretches over it (one link, named by the product).
+// Variants (size, colour, storage) are chosen on the product page, where Add to cart lives.
 export function ProductCard({ product }: ProductCardProps) {
+  const discount = discountPercent(product.minPricePaise, product.mrpPaise);
   return (
-    <article className="flex h-full flex-col gap-sm rounded-card border border-lowlight bg-white p-md">
-      <div className="relative aspect-square w-full overflow-hidden rounded-default bg-strokes">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-card border border-lowlight bg-white transition-shadow duration-200 focus-within:shadow-lg hover:border-accent-light-2 hover:shadow-lg">
+      <div className="relative aspect-square w-full overflow-hidden bg-strokes">
         {product.imageUrl === null ? (
           <div className="flex h-full items-center justify-center text-grey">
             <Icon name="image" size="lg" />
@@ -19,29 +24,60 @@ export function ProductCard({ product }: ProductCardProps) {
             src={product.imageUrl}
             alt={product.imageAlt ?? product.name}
             fill
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-            className="object-cover"
+            sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+            className={`object-cover transition-transform duration-300 group-hover:scale-105 ${product.inStock ? '' : 'opacity-60 grayscale'}`}
             unoptimized
           />
         )}
-      </div>
-      <Text variant="body3" tone="subtitle">
-        {product.brandName}
-      </Text>
-      <Link href={`/products/${product.slug}`} appearance="plain" variant="body2-medium">
-        {product.name}
-      </Link>
-      <PriceTag pricePaise={product.minPricePaise} mrpPaise={product.mrpPaise} prefix="From" />
-      <div className="mt-auto flex flex-wrap items-center gap-sm">
-        {product.rating === null ? null : (
-          <Text as="span" variant="body3" tone="subtitle">
-            <span className="inline-flex items-center gap-xs">
-              <Icon name="star" size="xs" />
-              {product.rating.toFixed(1)} ({product.reviewCount})
+        {product.inStock ? (
+          discount >= 30 ? (
+            <span className="absolute top-sm left-sm rounded-pill bg-headings/85 px-sm py-xs text-body4-medium text-white">
+              Top deal
             </span>
-          </Text>
+          ) : null
+        ) : (
+          <span className="absolute top-sm left-sm">
+            <Badge tone="danger">Out of stock</Badge>
+          </span>
         )}
-        {product.inStock ? null : <Badge tone="danger">Out of stock</Badge>}
+      </div>
+      <div className="flex flex-1 flex-col gap-xs p-sm sm:gap-sm sm:p-md">
+        <Text variant="body4-medium" tone="subtitle">
+          <span className="tracking-wide uppercase">{product.brandName}</span>
+        </Text>
+        <NextLink
+          href={`/products/${product.slug}`}
+          className={`line-clamp-2 rounded-default text-headings after:absolute after:inset-0 hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body2-medium' })}`}
+        >
+          {product.name}
+        </NextLink>
+        <PriceTag pricePaise={product.minPricePaise} mrpPaise={product.mrpPaise} prefix="From" />
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-sm pt-xs">
+          {product.rating === null ? (
+            <Text as="span" variant="body3" tone="muted">
+              No reviews yet
+            </Text>
+          ) : (
+            <span className="inline-flex items-center gap-xs rounded-pill bg-green-50 px-sm py-xs">
+              <Icon name="star" size="xs" />
+              <Text as="span" variant="body3-medium">
+                {product.rating.toFixed(1)}
+              </Text>
+              <Text as="span" variant="body3" tone="muted">
+                ({product.reviewCount})
+              </Text>
+            </span>
+          )}
+          <span
+            aria-hidden="true"
+            className="hidden items-center gap-xs text-primary sm:inline-flex"
+          >
+            <Text as="span" variant="body3-medium" tone="primary">
+              View
+            </Text>
+            <Icon name="arrow-right" size="xs" />
+          </span>
+        </div>
       </div>
     </article>
   );

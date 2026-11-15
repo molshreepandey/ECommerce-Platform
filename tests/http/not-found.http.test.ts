@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { adminHost, getPage, placeholderAdminCookie, storeHost, visibleMarkup } from './app-server';
 
-const storeMarkers = ['Back to the store', 'Demo Store'];
+const storeMarkers = ['Back to the store', 'ShopSphere'];
 const adminMarkers = ['This admin page does not exist', 'Back to the dashboard'];
 
 describe('unmatched URLs on the store host', () => {
@@ -14,7 +14,7 @@ describe('unmatched URLs on the store host', () => {
 
       expect(response.status).toBe(404);
       expect(response.headers['content-type']).toMatch(/^text\/html/);
-      expect(markup).toContain('<title>Page not found · Demo Store</title>');
+      expect(markup).toContain('<title>Page not found · ShopSphere</title>');
       expect(markup).toMatch(/<h1[^>]*>Page not found<\/h1>/);
       for (const marker of storeMarkers) expect(markup).toContain(marker);
       for (const marker of adminMarkers) expect(markup).not.toContain(marker);
@@ -51,7 +51,7 @@ describe('matched pages are unaffected', () => {
     const storeHome = await getPage(storeHost, '/');
     const adminSignIn = await getPage(adminHost, '/login');
     expect(storeHome.status).toBe(200);
-    expect(visibleMarkup(storeHome.text)).toContain('<title>Demo Store</title>');
+    expect(visibleMarkup(storeHome.text)).toContain('<title>ShopSphere</title>');
     expect(adminSignIn.status).toBe(200);
     expect(visibleMarkup(adminSignIn.text)).toContain('<title>Sign in · Admin</title>');
   });

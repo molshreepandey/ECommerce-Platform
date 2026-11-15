@@ -7,7 +7,7 @@ export const seededStoreSettings = {
   cod_fee_paise: 2900,
   max_cod_order_value_paise: 5000000,
   return_window_days: 7,
-  store_branding: { storeName: 'Demo Store', logoUrl: null, primaryColour: null },
+  store_branding: { storeName: 'ShopSphere', logoUrl: null, primaryColour: null },
 } as const;
 
 export async function seedStoreSettings(client: SeedClient): Promise<void> {
