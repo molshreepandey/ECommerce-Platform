@@ -59,7 +59,7 @@ change audited with actor, before and after (never secrets).
 
 ## Limitations (summary)
 
-Not deployed (local only); CI results not readable here; COD and a simulated gateway only (the
+Not deployed (local only); GitHub Actions CI passing on `d144a2f` (reported by the owner); COD and a simulated gateway only (the
 simulation is off in production); one simulated courier; allocation is priority-based by default, and the
 optional "nearest" strategy approximates distance by shared PIN prefix (no coordinates dataset, TD-030);
 notifications are simulated (audit-log rows, no sending, so no failure history); whole-order cancellation

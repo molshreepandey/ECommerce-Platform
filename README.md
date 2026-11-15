@@ -10,6 +10,68 @@ source of truth; Elasticsearch is the search read model; Redis is used for cachi
 
 `*.localhost` resolves to your machine without editing `/etc/hosts`.
 
+## Features
+
+**Customer store:** registration, password and OTP login, address book; category browsing and full-text
+search with facets, attribute filters, sorting and autocomplete; product pages with variant picker,
+availability, pincode check, group swatches and verified-buyer reviews; guest cart merged on sign-in,
+coupons, GST-inclusive pricing in INR; idempotent checkout with Cash on Delivery or a simulated online
+gateway; order tracking per shipment, cancellation, invoices, returns and exchanges, notification log.
+
+**Admin panel (role-based):** dashboard KPIs and reconciled reports with CSV export; modular catalogue
+(product types with their own attributes, brands, products, variants, media, CSV import); category tree,
+tagging queue and product groups; warehouses, multi-warehouse stock matrix, adjustments, transfers, ledger
+and low-stock view; orders and shipments (pack, AWB, PDF label, simulated courier scans, NDR/RTO,
+re-allocation, bulk actions, daily manifest); returns, customers (block/unblock), coupons, settings,
+couriers and serviceable pincodes, collections, banners, branding, staff and roles, audit trail, search
+index tools and Swagger API docs.
+
+## Architecture and tech stack
+
+```
+store.<host> ─┐                    ┌─ PostgreSQL 18 (source of truth: orders, stock, payments, audit)
+              ├─ Next.js 16 app ───┼─ Elasticsearch 9 (search read model, fed by a transactional outbox;
+admin.<host> ─┘  (one codebase,    │   PostgreSQL fallback when it is down)
+                 routed by host)   └─ Redis 8 (cache and rate limits only; fails open to PostgreSQL)
+```
+
+- **Modular monolith:** `src/modules/<domain>` (identity, catalogue, taxonomy, inventory, cart, pricing,
+  ordering, payment, fulfilment, returns, merchandising, search, reporting, audit, notifications) holds
+  services and repositories; `src/app` holds pages and API route handlers only; UI is atomic design
+  (`src/components/atoms|molecules|organisms|layouts`) on Tailwind tokens.
+- **Correctness first:** money in integer paise (INR only, `en-IN` formatting); stock reserved with
+  guarded `UPDATE`s in a fixed lock order (never negative, no overselling under concurrency); checkout and
+  payments idempotent (`Idempotency-Key` + request fingerprint); order and shipment state machines; every
+  admin write audited in the same transaction.
+- **Security:** role × permission checks on every admin handler, ownership checks on every customer
+  resource, Argon2id passwords, hashed session tokens in `HttpOnly` cookies, origin checks on writes, rate
+  limits, CSP and security headers, HMAC-signed courier webhooks.
+
+| Layer   | Technology                                                                                  |
+| ------- | ------------------------------------------------------------------------------------------- |
+| App     | Next.js 16.4.5 (App Router, Cache Components), React 19.3, TypeScript 5.9 (strict), Node 26 |
+| Data    | PostgreSQL 18 with Prisma 7.10, Elasticsearch 9.5, Redis 8.10                               |
+| UI      | Tailwind CSS 4, Radix UI, lucide-react, Chart.js, Geist font                                |
+| Quality | Vitest (unit, integration, HTTP), Playwright (E2E), ESLint, Prettier, GitHub Actions        |
+| Docs    | OpenAPI 3.1 generated from route handlers, Swagger UI, Prisma ERD generator                 |
+
+More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/technical-report.md`](docs/technical-report.md).
+
+## Verification status
+
+| Check                                 | Result (latest local run, commit `d144a2f`)              |
+| ------------------------------------- | -------------------------------------------------------- |
+| Format, lint, typecheck               | pass                                                     |
+| Unit tests (`npm test`)               | 481 / 481                                                |
+| Integration tests (real PostgreSQL)   | 525 / 525                                                |
+| HTTP API tests (against the build)    | 122 / 122                                                |
+| Browser E2E (desktop, 360 px, 768 px) | 150 / 150                                                |
+| Production build                      | pass (111 pages)                                         |
+| GitHub Actions CI                     | passing on `d144a2f` (reported by the owner from GitHub) |
+
+All five acceptance tests of the brief are automated; details and the fresh-database CI rehearsal are in
+[`docs/test-evidence.md`](docs/test-evidence.md).
+
 ## Requirements
 
 - Node 26.13.0 (`nvm use`; `npm` refuses to install on another version)
@@ -185,7 +247,8 @@ after 5 wrong attempts, can be resent after 30 seconds and work once.
   "nearest warehouse" allocation setting. "Nearest" is approximated by the shared PIN-code prefix (zone,
   circle, sorting district), not by geographic distance: no PIN coordinates dataset is used. The default
   is priority-based allocation.
-- Not deployed: no hosted store/admin URLs, no CI result readable here (see `IMPLEMENTATION_PROGRESS.md`).
+- Not deployed: no hosted store/admin URLs; the demo runs locally. Hosted deployment prerequisites and
+  blockers are in [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md).
 - Whole-order cancellation only; coupon usage is not given back when an order is cancelled.
 - Security items that need an owner decision (TD-032, TD-033): phone numbers are not verified at
   registration, so someone could register another person's number first (proposal:
@@ -193,15 +256,42 @@ after 5 wrong attempts, can be resent after 30 seconds and work once.
   and signs out other devices); CSP still allows inline scripts (nonces would disable static and partial
   rendering); with no trusted proxy hop configured, client IPs are unknown, so registration shares one
   site-wide limit and guest cart / search limits are off (production logs a warning at start).
-- Production prerequisites: `COURIER_WEBHOOK_SECRET` (per-partner keys are derived from it),
-  `authentication.trustedProxyHopCount` set to the real proxy chain, the two pending migrations applied
-  (`docs/migrations/dev-migration-checklist.md`), `OTP_DISPLAY_IN_UI` is ignored in production.
+- Production prerequisites (see [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)):
+  `COURIER_WEBHOOK_SECRET` (per-partner keys are derived from it), `authentication.trustedProxyHopCount`
+  set to the real proxy chain, real hosts in the config file, and a way to create the first admin (the
+  seed refuses non-development environments). A fresh database gets every migration from
+  `npm run db:deploy`; an existing database created before 2026-11-14 also needs the two newest
+  migrations ([`docs/migrations/dev-migration-checklist.md`](docs/migrations/dev-migration-checklist.md)).
 - A customer can hold at most 2 unpaid online orders at a time (COD is not capped).
 - See `docs/REQUIREMENTS_TRACEABILITY.md` for the full limitation register.
 
 ## Documentation
 
-- `docs/ARCHITECTURE.md`, `docs/TECHNICAL_DECISIONS.md`, `docs/DATABASE_DESIGN.md`
-- `docs/API_DOCUMENTATION.md`, `docs/TESTING_STRATEGY.md`, `docs/DEPLOYMENT_GUIDE.md`
-- `docs/redis-design.md`, `docs/REQUIREMENTS_TRACEABILITY.md`, `docs/walkthroughs/`
-- `IMPLEMENTATION_PROGRESS.md`: what was built, how it was verified, and what is still open
+| Deliverable                 | File                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| ER diagram                  | [`docs/er-diagram.svg`](docs/er-diagram.svg) (generated from `prisma/schema.prisma`, `npm run docs:erd`)     |
+| Database design             | [`docs/DATABASE_DESIGN.md`](docs/DATABASE_DESIGN.md), migrations in [`prisma/migrations`](prisma/migrations) |
+| API reference (OpenAPI 3.1) | [`docs/openapi.json`](docs/openapi.json); Swagger UI at `http://admin.localhost:3000/docs` (staff sign-in)   |
+| API guide                   | [`docs/API_DOCUMENTATION.md`](docs/API_DOCUMENTATION.md)                                                     |
+| Architecture                | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/redis-design.md`](docs/redis-design.md)               |
+| Technical report            | [`docs/technical-report.md`](docs/technical-report.md)                                                       |
+| Technical decisions         | [`docs/TECHNICAL_DECISIONS.md`](docs/TECHNICAL_DECISIONS.md)                                                 |
+| Test evidence               | [`docs/test-evidence.md`](docs/test-evidence.md), [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md)     |
+| Requirements traceability   | [`docs/REQUIREMENTS_TRACEABILITY.md`](docs/REQUIREMENTS_TRACEABILITY.md)                                     |
+| Demo video script           | [`docs/demo-walkthrough.md`](docs/demo-walkthrough.md)                                                       |
+| Deployment                  | [`docs/DEPLOYMENT_GUIDE.md`](docs/DEPLOYMENT_GUIDE.md)                                                       |
+| Build journal               | [`IMPLEMENTATION_PROGRESS.md`](IMPLEMENTATION_PROGRESS.md)                                                   |
+
+## AI assistance and third-party libraries
+
+AI tools: Claude Code (Anthropic) was used throughout for implementation, test writing, debugging, code
+review, security review and documentation, under the owner's direction and review; every result above
+comes from tests actually run.
+
+Main libraries (versions as installed; licences from each package): Next.js 16.4.5 (MIT), React 19.3.0
+(MIT), Prisma 7.10.1 (Apache-2.0), pg 8.23.1 (MIT), Zod 4.6.7 (MIT), @elastic/elasticsearch 9.5.1
+(Apache-2.0), node-redis 6.3.1 (MIT), @node-rs/argon2 2.2.2 (MIT), pino 10.4.0 (MIT), swagger-ui-dist
+5.34.1 (Apache-2.0), Chart.js 4.6.1 (MIT), react-chartjs-2 5.3.1 (MIT), Radix UI 1.8.1 (MIT), lucide-react
+1.70.0 (ISC), class-variance-authority 0.7.1 (Apache-2.0), Tailwind CSS 4.3.5 (MIT), Geist (SIL Open Font
+Licence), Playwright 1.65.0 (Apache-2.0), Vitest 5.1.0 (MIT), TypeScript 5.9.3 (Apache-2.0). Demo product
+images are external URLs from picsum.photos.

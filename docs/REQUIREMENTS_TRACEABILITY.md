@@ -4,7 +4,8 @@ Primary specification: the Algions AI Labs assessment brief "E-Commerce Platform
 Development). Feature IDs (C*, D*) refer to `ECOMMERCE_PLATFORM_PLAN.md`. Updated at the end of every wave.
 
 Status: ✅ completed with evidence · 🟡 partial (groundwork exists) · ⬜ pending · ⛔ blocked by a stop
-condition. Last update: Waves 13–15 (2026-11-15, working tree, not committed, awaiting owner review).
+condition. Last update: 2026-11-15, all waves committed and pushed (`29b9e64`, `d144a2f`); the dated
+sections below record the state when each was written.
 
 ## Brief §1: business scope
 

@@ -1,3 +1,5 @@
+import { ensureRbacCatalogue } from '../../src/modules/identity/rbac-catalogue';
+
 import type { SeedClient } from './seed-client';
 import { daysFromSeedDay } from './seed-clock';
 import { deterministicUuidV7, requireValue } from './seed-ids';
@@ -5,104 +7,8 @@ import { deterministicUuidV7, requireValue } from './seed-ids';
 // New demo accounts start with this; demo-passwords.seed.ts replaces it with an Argon2id hash.
 export const placeholderPasswordHash = 'SEED_PLACEHOLDER_PASSWORD_HASH_REPLACED_IN_WAVE_2';
 
-export const permissionSeeds = [
-  { code: 'catalogue.read', description: 'View product types, attributes, brands and products' },
-  {
-    code: 'catalogue.write',
-    description: 'Create and edit product types, attributes, brands and products',
-  },
-  { code: 'taxonomy.write', description: 'Manage the category tree, tagging and product groups' },
-  { code: 'merchandising.write', description: 'Manage collections, banners and store branding' },
-  { code: 'inventory.read', description: 'View warehouses, stock and the inventory ledger' },
-  { code: 'inventory.write', description: 'Adjust and transfer stock' },
-  { code: 'warehouses.write', description: 'Create and edit warehouses' },
-  { code: 'orders.read', description: 'View orders, shipments and returns' },
-  { code: 'orders.write', description: 'Change order and shipment status' },
-  { code: 'returns.write', description: 'Decide returns and record refunds' },
-  { code: 'couriers.write', description: 'Manage courier partners and serviceable pincodes' },
-  { code: 'customers.read', description: 'View customers' },
-  { code: 'customers.block', description: 'Block and unblock customers' },
-  { code: 'coupons.write', description: 'Create and edit coupons' },
-  { code: 'settings.write', description: 'Change store settings' },
-  { code: 'reports.read', description: 'View dashboard, reports and exports' },
-  { code: 'audit.read', description: 'View the audit trail' },
-  { code: 'search.manage', description: 'View search index health and trigger reindex' },
-  { code: 'staff.manage', description: 'Manage staff users and roles' },
-] as const;
-
-type PermissionCode = (typeof permissionSeeds)[number]['code'];
-
-const allPermissionCodes: readonly PermissionCode[] = permissionSeeds.map(
-  (permissionSeed) => permissionSeed.code,
-);
-
-const roleDefinitions: readonly {
-  code: string;
-  name: string;
-  description: string;
-  permissionCodes: readonly PermissionCode[];
-}[] = [
-  {
-    code: 'SUPER_ADMIN',
-    name: 'Super admin',
-    description: 'Full access including staff management',
-    permissionCodes: allPermissionCodes,
-  },
-  {
-    code: 'CATALOGUE_MANAGER',
-    name: 'Catalogue manager',
-    description: 'Catalogue, taxonomy, grouping and merchandising',
-    permissionCodes: [
-      'catalogue.read',
-      'catalogue.write',
-      'taxonomy.write',
-      'merchandising.write',
-      'inventory.read',
-      'reports.read',
-    ],
-  },
-  {
-    code: 'INVENTORY_MANAGER',
-    name: 'Inventory manager',
-    description: 'Warehouses and stock',
-    permissionCodes: [
-      'catalogue.read',
-      'inventory.read',
-      'inventory.write',
-      'warehouses.write',
-      'orders.read',
-      'reports.read',
-    ],
-  },
-  {
-    code: 'ORDER_OPS',
-    name: 'Order operations',
-    description: 'Orders, shipments, couriers and returns',
-    permissionCodes: [
-      'catalogue.read',
-      'inventory.read',
-      'orders.read',
-      'orders.write',
-      'returns.write',
-      'couriers.write',
-      'customers.read',
-      'reports.read',
-    ],
-  },
-  {
-    code: 'SUPPORT',
-    name: 'Support (read-only)',
-    description: 'Read-only access for customer support',
-    permissionCodes: [
-      'catalogue.read',
-      'inventory.read',
-      'orders.read',
-      'customers.read',
-      'reports.read',
-      'audit.read',
-    ],
-  },
-];
+// The permission and role catalogue lives in the identity module (shared with the first-admin bootstrap).
+export { permissionCatalogue as permissionSeeds } from '../../src/modules/identity/rbac-catalogue';
 
 export const staffUsers = [
   { email: 'super.admin@demo-store.test', fullName: 'Sana Kapoor', roleCode: 'SUPER_ADMIN' },
@@ -219,45 +125,6 @@ export interface SeededCustomer {
   addresses: SeededAddress[];
 }
 
-async function seedPermissionsAndRoles(client: SeedClient): Promise<Map<string, string>> {
-  const permissionIdByCode = new Map<string, string>();
-  for (const { code, description } of permissionSeeds) {
-    const permission = await client.permission.upsert({
-      where: { code },
-      create: { code, description },
-      update: { description },
-      select: { id: true },
-    });
-    permissionIdByCode.set(code, permission.id);
-  }
-
-  const roleIdByCode = new Map<string, string>();
-  for (const roleDefinition of roleDefinitions) {
-    const role = await client.role.upsert({
-      where: { code: roleDefinition.code },
-      create: {
-        code: roleDefinition.code,
-        name: roleDefinition.name,
-        description: roleDefinition.description,
-      },
-      update: { name: roleDefinition.name, description: roleDefinition.description },
-      select: { id: true },
-    });
-    roleIdByCode.set(roleDefinition.code, role.id);
-    await client.rolePermission.createMany({
-      data: roleDefinition.permissionCodes.map((permissionCode) => ({
-        roleId: role.id,
-        permissionId: requireValue(
-          permissionIdByCode.get(permissionCode),
-          `permission ${permissionCode}`,
-        ),
-      })),
-      skipDuplicates: true,
-    });
-  }
-  return roleIdByCode;
-}
-
 async function seedStaffUsers(
   client: SeedClient,
   roleIdByCode: Map<string, string>,
@@ -347,7 +214,7 @@ async function seedCustomers(client: SeedClient): Promise<Map<DemoCustomerKey, S
 export async function seedIdentity(
   client: SeedClient,
 ): Promise<Map<DemoCustomerKey, SeededCustomer>> {
-  const roleIdByCode = await seedPermissionsAndRoles(client);
+  const roleIdByCode = await ensureRbacCatalogue(client);
   await seedStaffUsers(client, roleIdByCode);
   return seedCustomers(client);
 }

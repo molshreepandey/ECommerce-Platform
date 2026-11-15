@@ -33,6 +33,7 @@
     "search:sync": "tsx scripts/search-sync.ts",
     "search:reindex": "tsx scripts/search-reindex.ts",
     "orders:expire-unpaid": "tsx scripts/expire-unpaid-orders.ts",
+    "admin:create-first": "tsx scripts/create-first-admin.ts",
     "docs:openapi": "tsx scripts/generate-openapi.ts && prettier --write docs/openapi.json"
   },
   "dependencies": {

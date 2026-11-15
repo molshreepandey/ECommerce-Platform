@@ -11,6 +11,7 @@ export const auditActions = [
   'staff.login_succeeded',
   'staff.login_failed',
   'staff.created',
+  'staff.bootstrapped',
   'staff.roles_changed',
   'staff.status_changed',
   'catalogue.product_type_created',

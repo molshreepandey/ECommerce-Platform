@@ -56,23 +56,61 @@ and collection links are never deleted or modified by it (TD-016).
 - Staff stock requests are rows in `inventory_change_requests` (unique per staff member and key), kept
   indefinitely.
 
-## Integrity requirements for later waves (mandatory)
+## Order-line snapshots and online payment (Wave 8, migration `20261114090000`)
 
-- **Wave 8, before order placement:** add the composite FK `order_items(product_id, variant_id)` →
-  `product_variants(product_id, id)` (the unique key already exists). Re-run the read-only check first; on
-  2026-11-10 it found 0 mismatched rows in development.
-- **Wave 8, before order placement:** order items must snapshot `weight_grams`, `length_mm`, `breadth_mm`
-  and `height_mm`, so later catalogue edits cannot change historical shipment calculations.
-- **Wave 8 checkout:** insert the order and its shipments before reserving, and reserve only through
-  `reserveStock` / `applyReservationChanges` inside the checkout transaction (caller contract, TD-019).
-- **Wave 9 dispatch, cancellation and restock:** lock order and shipment rows first, then go through the
-  inventory services; dispatch writes a DISPATCH movement per shipment line (negative delta, on hand and
-  reserved both lowered). Real dispatch-versus-cancellation race tests are mandatory.
+Built as required (the former "integrity requirements for later waves"):
+
+- **Composite FK** `order_items(product_id, variant_id)` → `product_variants(product_id, id)`: an order line
+  can never name a variant of another product.
+- **Snapshots on `order_items`**, deliberately without foreign keys so later catalogue edits never change
+  history: `weight_grams`, `length_mm`, `breadth_mm`, `height_mm` (NOT NULL, all > 0), `category_id`,
+  `category_path`, `category_name` (all three NULL or all three set) and `product_group_id`.
+- **`payment_attempts`** for the simulated online gateway: one row per attempt, unique
+  `(payment_id, idempotency_key)`, at most one `SUCCEEDED` attempt per payment (partial unique index),
+  `amount_paise > 0`, a decline code exactly when declined. `PaymentMethod` gained `ONLINE`.
+- `CHECK`s on order idempotency keys and request fingerprints; indexes for the payments report, the
+  customer list and the webhook log. Migration `20261114180000` adds the daily-manifest index
+  `shipments(warehouse_id, shipped_at)`.
+- Checkout inserts the order and shipments, then reserves only through `applyReservationChanges` inside
+  the same transaction; dispatch, cancellation and restock lock order and shipment rows first (TD-019).
+
+## Tables by module (47)
+
+| Module              | Tables                                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity and access | `customers`, `customer_addresses`, `staff_users`, `roles`, `permissions`, `role_permissions`, `staff_user_roles`, `sessions`, `otp_challenges`, `rate_limit_counters` |
+| Catalogue           | `product_types`, `attribute_definitions`, `brands`, `products`, `product_variants`, `product_media`                                                                   |
+| Taxonomy            | `categories`, `product_groups`                                                                                                                                        |
+| Inventory           | `warehouses`, `inventory_levels`, `inventory_movements`, `inventory_change_requests` (idempotent stock writes)                                                        |
+| Cart and pricing    | `carts`, `cart_items`, `coupons`, `coupon_redemptions`, `store_settings`                                                                                              |
+| Orders and payments | `orders`, `order_items`, `order_status_history`, `payments`, `payment_attempts`, `refunds`                                                                            |
+| Fulfilment          | `shipments`, `shipment_items`, `shipment_tracking_events`, `courier_partners`, `courier_serviceable_pincodes`, `courier_webhook_receipts`                             |
+| Returns             | `return_requests`, `return_request_items`                                                                                                                             |
+| Merchandising       | `banners`, `collections`, `collection_products`, `reviews`                                                                                                            |
+| Search and audit    | `search_outbox`, `audit_logs`                                                                                                                                         |
+
+## Migrations
+
+| Migration                                        | What it adds                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------- |
+| `20261107000000_init`                            | every plan §9.2 table, CHECKs, partial/GIN/BRIN/trigram indexes, `pg_trgm` |
+| `20261107150000_identity_constraints`            | identity uniqueness and session constraints                                |
+| `20261110093000_catalogue_integrity`             | catalogue integrity indexes and the composite image FK                     |
+| `20261110150000_inventory_receipt_movement_type` | `RECEIPT` inventory movement type                                          |
+| `20261110150100_inventory_ledger_integrity`      | ledger integrity constraints                                               |
+| `20261114090000_order_snapshots_online_payment`  | order-line snapshots, composite FK, `payment_attempts`, `ONLINE`           |
+| `20261114180000_shipment_manifest_index`         | `shipments(warehouse_id, shipped_at)` index                                |
+
+**PostgreSQL 18 is required:** primary keys default to the built-in `uuidv7()`. A fresh database gets
+everything from `npm run db:deploy` (rehearsed on a disposable database on 2026-11-15:
+[`test-evidence.md`](test-evidence.md)); rollback scripts for the two newest migrations are in
+`prisma/rollbacks/`, and applying them to an existing database is described in
+[`migrations/dev-migration-checklist.md`](migrations/dev-migration-checklist.md).
 
 ## Changes from the plan (all documented in the journal)
 
 - No `INCLUDE` on the inventory primary key, and a trigram index on `categories.path` (Prisma would
   otherwise report drift).
 - Added `rate_limit_counters` (plan §10B needs DB-backed rate limits).
-- Planned for Wave 8B: payment provider columns, `payment_webhook_receipts`, refund changes
-  (additive only).
+- Online payment is a simulated gateway with `payment_attempts` (owner decision 2026-11-14) instead of the
+  plan's COD-only scope; no payment webhooks exist because no real gateway is integrated.

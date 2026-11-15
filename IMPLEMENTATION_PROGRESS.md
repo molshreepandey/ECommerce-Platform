@@ -11,35 +11,24 @@ each entry was written; this list is the current status.
 - [x] Wave 2A — Platform groundwork (approved by the owner on 2026-11-07; commits `6863ad2`, `6d60892`; pushed to GitHub on 2026-11-10)
 - [x] Wave 2B — Identity, access, audit (commit `f2c40ab`; pushed to GitHub on 2026-11-10)
 - [x] Wave 3 — Modular catalogue (commits `24563ed`, `8b8ad00`, `800dd41`; pushed to GitHub on 2026-11-10)
-- [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10; `origin/main` is `e0c3895`)
-- [ ] Wave 5 — Warehouses and inventory (in progress). Step 1, the migration foundation: commit `f6c018b`, pushed;
-      applied to development (five migrations, fingerprint `9cec751c29cab1faab002a9308e23887`). Step 2, the
-      inventory services: **complete**; commit `ef16d46` plus documentation follow-up `9c1f691`, both pushed to
-      GitHub on 2026-11-11, after the N1 fix and a full regression (332 unit, 351 integration, 56 HTTP, 52
-      browser). Step 3, the admin inventory API: commit `d9de29f`, pushed on 2026-11-12. Step 4, the admin
-      inventory pages: commit `77e9a9b`, pushed on 2026-11-12. Step 5, dispatch and restock primitives and
-      Wave 5 close-out: done and verified (363 unit, 390 integration, 91 HTTP, 66 browser), **not
-      committed**, awaiting owner review.
-- [x] Wave 5 — committed and pushed as `9953124` (2026-11-12).
-- [ ] Waves 6–10 — **built and verified on the test database (2026-11-14), not committed**, awaiting
-      owner review: 430 unit, 440 integration, 101 HTTP, 72 browser, all passing twice. Migration
-      `20261114090000` is applied to `ecommerce_test` only; the development database is unchanged.
-- [ ] Waves 11–12 (P1) — **built and verified on the test database (2026-11-14), not committed**,
-      awaiting owner review (owner extended the scope to Waves 11–12 on 2026-11-14): 447 unit, 473
-      integration, 111 HTTP, 80 browser; final verification (search prerender fix, diff review) done. Migration `20261114180000` (one index) is applied to
-      `ecommerce_test` only; the development database is unchanged.
-- [ ] Wave 13 (P1) — **built and verified (2026-11-15), not committed**, awaiting owner review: COMPLETE
-      (every feature implemented with passing tests).
-- [ ] Waves 14–15 — **PARTIALLY COMPLETE (2026-11-15)**: test evidence, EXPLAIN review, rules review,
-      OpenAPI + Swagger UI, ER diagram, README and technical report done; blocked by the owner's stop
-      conditions: CI result, fresh `db:reset`, deployment and deployed-URL regression (video: owner).
-- [ ] Wave 16 (P2) — **built and verified (2026-11-15), not committed**: search autocomplete (C14),
-      simulated notification log (C38), optional nearest-PIN allocation (a PIN-prefix approximation, not
-      geographic distance; TD-030). No migration.
-- Final verification (2026-11-15, see the last entry): all seven checks pass on the working tree and in an
-  isolated fresh copy; 474 unit, 520 integration, 122 HTTP, 150 browser. Nothing committed.
-
-CI results are not readable with the current GitHub token (L11), so no wave has a verified CI result here.
+- [x] Wave 4 — Category tree, tagging, product groups (commit `e0c3895`; pushed to GitHub on 2026-11-10)
+- [x] Wave 5 — Warehouses and inventory (commits `f6c018b` … `9953124`, pushed 2026-11-10 to 2026-11-12).
+- [x] Waves 6–10 (P0) — storefront, cart, checkout, fulfilment, customers and reports.
+- [x] Waves 11–13 (P1) — merchandising, post-purchase and operations, admin power tools.
+- [x] Wave 14 — hardening (test evidence, EXPLAIN review, rules and UI pass, security fixes TD-031 to TD-033).
+      Not done: an acceptance run after `db:reset` on the development database (owner excluded it; the
+      same sequence was rehearsed on a disposable database instead).
+- [x] Wave 15 — documentation (README, OpenAPI + Swagger UI, ER diagram, technical report, test evidence,
+      demo script, deployment guide). Not done: hosted deployment (blockers in `docs/DEPLOYMENT_GUIDE.md`)
+      and the video (recorded by the owner).
+- [x] Wave 16 (P2) — search autocomplete, notification log, nearest-PIN allocation (TD-030).
+- Waves 6–16 committed as `29b9e64` and pushed on 2026-11-15 (fast-forward from `9953124`); E2E fix
+  `d144a2f` pushed the same day. GitHub Actions: passing on `d144a2f` as reported by the owner (the
+  local token cannot read Actions results, L11). Runs #4–#10 failed (lint before `next typegen`, fixed in
+  `29b9e64`; a racy E2E assertion, fixed in `d144a2f`).
+- Development database: still 5 migrations (fingerprint `9cec751c29cab1faab002a9308e23887`); it needs
+  `20261114090000` and `20261114180000` before the current code runs against it
+  (`docs/migrations/dev-migration-checklist.md`). The test database has all 7.
 
 ## Environment decisions (2026-11-07)
 

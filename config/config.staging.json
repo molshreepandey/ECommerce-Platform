@@ -1,12 +1,12 @@
 {
   "surfaces": {
     "store": {
-      "hosts": ["store.staging.example.com"],
-      "publicOrigin": "https://store.staging.example.com"
+      "hosts": ["ecommerce-platform-production-b3580972.up.railway.app"],
+      "publicOrigin": "https://ecommerce-platform-production-b3580972.up.railway.app"
     },
     "admin": {
-      "hosts": ["admin.staging.example.com"],
-      "publicOrigin": "https://admin.staging.example.com"
+      "hosts": ["ecommerce-platform-production-defa29bb.up.railway.app"],
+      "publicOrigin": "https://ecommerce-platform-production-defa29bb.up.railway.app"
     }
   },
   "logging": {

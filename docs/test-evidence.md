@@ -69,9 +69,10 @@ The development database (fingerprint `9cec751c29cab1faab002a9308e23887`, 5 migr
 - **Fresh `db:reset`**: the plan's Wave 14 "done when" runs the acceptance tests after `npm run db:reset`.
   Not run: it deletes the development data, and the owner excluded it. The integration harness instead
   applies every migration to `ecommerce_test` and each file truncates its tables.
-- **CI**: `.github/workflows/ci.yml` exists, but CI results cannot be read with the current GitHub token
-  (L11), and nothing was pushed. Its steps were reproduced locally: the code checks in the fresh copy and
-  `db:deploy` + drift check + `db:seed` on a new database (both above).
+- **CI**: GitHub Actions (`.github/workflows/ci.yml`) passes on `d144a2f`, as reported by the owner
+  from GitHub; the local token cannot read Actions results (L11), so the log is not reproduced here. Its
+  steps were also reproduced locally: the code checks in the fresh copy and `db:deploy` + drift check +
+  `db:seed` on a new database (both above).
 - **Deployed URLs**: not deployed (owner decision); all results above are local.
 - **Load**: concurrency is tested (parallel checkouts, reservations, transfers, return requests); volume
   and timeout behaviour under load are not (L26, L41, L43).
