@@ -5,6 +5,7 @@ export const productSortOptions = [
   'price_asc',
   'price_desc',
   'newest',
+  'discount',
   'rating',
 ] as const;
 export type ProductSort = (typeof productSortOptions)[number];

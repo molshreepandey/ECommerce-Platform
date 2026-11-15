@@ -113,6 +113,12 @@ describe('decideHostRouting for bundled catalogue images', () => {
       kind: 'continue',
       surface: 'store',
     });
+    expect(route('store.localhost:3000', '/catalogue-photos/products/ribbed-crop-top.jpg')).toEqual(
+      {
+        kind: 'continue',
+        surface: 'store',
+      },
+    );
     expect(route('admin.localhost:3000', '/catalogue-art/banners/festive.svg')).toEqual({
       kind: 'continue',
       surface: 'admin',

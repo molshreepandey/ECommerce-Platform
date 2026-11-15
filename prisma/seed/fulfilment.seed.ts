@@ -43,6 +43,8 @@ const courierPartnerSeeds = [
       { pincode: '380001', codAvailable: true, maxCodValuePaise: 2000000, etaDays: 5 },
       { pincode: '226001', codAvailable: true, maxCodValuePaise: 2000000, etaDays: 6 },
       { pincode: '682001', codAvailable: true, maxCodValuePaise: 2000000, etaDays: 6 },
+      // Phagwara, Punjab.
+      { pincode: '144011', codAvailable: true, maxCodValuePaise: 2000000, etaDays: 6 },
       { pincode: '799001', codAvailable: false, maxCodValuePaise: null, etaDays: 7 },
       { pincode: '744101', codAvailable: false, maxCodValuePaise: null, etaDays: 9 },
     ],

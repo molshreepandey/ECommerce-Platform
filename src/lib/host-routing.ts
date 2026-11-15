@@ -11,8 +11,8 @@ export type HostRoutingDecision =
   | { kind: 'not_found' };
 
 const sharedApiPrefixes = ['/api/health'] as const;
-// Bundled static images in public/ (the demo catalogue art), served as files on both surfaces.
-const sharedStaticPrefixes = ['/catalogue-art/'] as const;
+// Bundled static images in public/ (the demo catalogue photos and drawings), served as files on both surfaces.
+const sharedStaticPrefixes = ['/catalogue-art/', '/catalogue-photos/'] as const;
 const apiPrefixesBySurface: Record<Surface, readonly string[]> = {
   store: ['/api/store/'],
   admin: ['/api/admin/', '/api/webhooks/'],

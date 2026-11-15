@@ -6,36 +6,41 @@
   --radius-*: initial;
 
   --font-sans: var(--font-geist-sans), sans-serif;
+  /* Editorial headings on the storefront (system serif faces, no extra download). */
+  --font-serif: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
 
-  --color-primary: #4764cd;
-  --color-primary-gradient-1: #5b7df4;
-  --color-primary-gradient-2: #4066f1;
-  --color-accent-blue: #2b9ff5;
-  --color-accent-light-1: #eff2fa;
-  --color-accent-light-2: #c8d1f0;
+  /* ShopSphere: warm ivory surfaces, charcoal text, a deep wine accent and a restrained gold. */
+  --color-primary: #7a1f3d;
+  --color-primary-gradient-1: #8c2a4b;
+  --color-primary-gradient-2: #651832;
+  --color-accent-blue: #7a1f3d;
+  --color-accent-light-1: #f7eef0;
+  --color-accent-light-2: #e6cbd3;
+  --color-gold: #9a7a45;
+  --color-gold-light: #f3ecdf;
 
-  --color-headings: #1d2025;
-  --color-subtitles: #555555;
-  --color-text-muted: #6b7280;
-  --color-grey: #7e8592;
+  --color-headings: #1f1c1a;
+  --color-subtitles: #57514b;
+  --color-text-muted: #6b645d;
+  --color-grey: #857d74;
   --color-white: #ffffff;
 
-  --color-background: #f7f7f6;
-  --color-strokes: #f2f2f5;
-  --color-lowlight: #e5e5ea;
-  --color-lowlight-2: #c5c6c7;
+  --color-background: #faf7f2;
+  --color-strokes: #f3eee7;
+  --color-lowlight: #e7e0d6;
+  --color-lowlight-2: #c9c0b4;
 
-  --color-nav-background: #1a1d23;
-  --color-nav-hover: #474a51;
-  --color-nav-group: #34363b;
+  --color-nav-background: #1f1b18;
+  --color-nav-hover: #433c36;
+  --color-nav-group: #322c27;
 
-  --color-status-green: #4caf50;
+  --color-status-green: #2e7d32;
   --color-status-yellow: #ffb300;
   --color-status-red: #f44336;
   --color-status-orange: #e08a2d;
   --color-green-50: #eeffed;
   --color-green-100: #c8f0c7;
-  --color-yellow-100: #ffe9c2;
+  --color-yellow-100: #f3ead9;
   --color-red-50: #fff2f2;
   --color-red-100: #fccfcf;
   --color-red-500: #bd1732;
@@ -43,8 +48,8 @@
 
   --color-highlight-1: #ff8ba7;
   --color-highlight-2: #ffb26b;
-  --color-highlight-3: #ffe7ec;
-  --color-highlight-4: #dbefdc;
+  --color-highlight-3: #f4e9e6;
+  --color-highlight-4: #e8ebe3;
 
   --text-heading1: 56px;
   --text-heading1--line-height: 60px;
@@ -108,4 +113,11 @@
   --radius-default: 4px;
   --radius-card: 8px;
   --radius-pill: 999px;
+}
+
+/* Storefront: serif display headings for an editorial feel (the admin keeps the sans-serif throughout). */
+.store-theme :is(h1, h2) {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }

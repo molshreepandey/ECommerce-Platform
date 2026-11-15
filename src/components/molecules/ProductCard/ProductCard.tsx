@@ -69,15 +69,14 @@ export function ProductCard({ product }: ProductCardProps) {
               </Text>
             </span>
           )}
-          <span
-            aria-hidden="true"
-            className="hidden items-center gap-xs text-primary sm:inline-flex"
-          >
-            <Text as="span" variant="body3-medium" tone="primary">
-              View
-            </Text>
-            <Icon name="arrow-right" size="xs" />
-          </span>
+          {product.inStock ? (
+            <span className="inline-flex items-center gap-xs">
+              <span aria-hidden="true" className="size-2 rounded-pill bg-status-green" />
+              <Text as="span" variant="body3" tone="success">
+                Available
+              </Text>
+            </span>
+          ) : null}
         </div>
       </div>
     </article>

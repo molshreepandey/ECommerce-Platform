@@ -88,6 +88,9 @@ export function StoreLayout({
             <Link href="/search" appearance="inverse" variant="body3">
               Search products
             </Link>
+            <Link href="/credits" appearance="inverse" variant="body3">
+              Photo credits
+            </Link>
           </nav>
           <nav aria-label="Help" className="flex flex-col gap-sm">
             <Text as="p" variant="body2-medium" tone="inverse">

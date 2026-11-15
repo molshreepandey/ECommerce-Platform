@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getDatabase } from '@/lib/db';
 
 import { productSeeds } from '../../prisma/seed/catalogue-data';
-import { seedDemoCatalogue } from '../../prisma/seed/demo-catalogue.seed';
+import { seedDemoCatalogue, seedDemoDeliveryCoverage } from '../../prisma/seed/demo-catalogue.seed';
+import { checkPincodeServiceability } from '@/modules/fulfilment/courier-serviceability.service';
 
 import { truncateAllTestTables } from './support/test-database';
 
@@ -79,5 +80,39 @@ describe('demo catalogue seed (staging opt-in)', () => {
       /already exist.*Nothing was written/s,
     );
     expect(await rowCounts()).toEqual(before);
+  });
+});
+
+describe('demo delivery coverage (checkout needs a courier for the pincode)', () => {
+  it('adds the demo couriers once; the pincode check then answers from that data', async () => {
+    expect((await checkPincodeServiceability(database, '560001')).isServiceable).toBe(false);
+    const first = await seedDemoDeliveryCoverage(database);
+    expect(first).toMatchObject({ outcome: 'seeded' });
+    const served = await checkPincodeServiceability(database, '560001');
+    expect(served.isServiceable).toBe(true);
+    expect(served.estimatedDeliveryDays).toBeGreaterThan(0);
+    const phagwara = await checkPincodeServiceability(database, '144011');
+    expect(phagwara).toMatchObject({
+      isServiceable: true,
+      estimatedDeliveryDays: 6,
+      isCashOnDeliveryAvailable: true,
+    });
+    const unserved = await checkPincodeServiceability(database, '999999');
+    expect(unserved).toMatchObject({ isServiceable: false, estimatedDeliveryDays: null });
+
+    const pincodes = await database.courierServiceablePincode.count();
+    expect(await seedDemoDeliveryCoverage(database)).toMatchObject({ outcome: 'already-present' });
+    expect(await database.courierServiceablePincode.count()).toBe(pincodes);
+  });
+
+  it('never touches couriers an admin already configured', async () => {
+    await database.courierPartner.create({
+      data: { code: 'own-courier', name: 'Own Courier', adapterKey: 'demo_courier', priority: 1 },
+    });
+    expect(await seedDemoDeliveryCoverage(database)).toEqual({
+      outcome: 'already-present',
+      courierCount: 1,
+    });
+    expect(await database.courierServiceablePincode.count()).toBe(0);
   });
 });

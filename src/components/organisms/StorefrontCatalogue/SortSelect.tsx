@@ -10,6 +10,7 @@ const sortLabels: Readonly<Record<ProductSort, string>> = {
   price_asc: 'Price: low to high',
   price_desc: 'Price: high to low',
   newest: 'Newest first',
+  discount: 'Biggest discount',
   rating: 'Customer rating',
 };
 

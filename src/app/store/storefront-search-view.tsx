@@ -10,19 +10,28 @@ import { Link } from '@/components/atoms/Link';
 import { Pagination } from '@/components/atoms/Pagination';
 import { Text, textClassNames } from '@/components/atoms/Text';
 import {
+  type FilterCategoryLinks,
+  FilterDrawer,
   FilterSidebar,
+  type SearchUrlState,
   SearchResultsGrid,
   SortSelect,
   searchHref,
   searchUrlStateFromQuery,
 } from '@/components/organisms/StorefrontCatalogue';
+
 import {
   parseProductSearchParams,
   type ProductSearchQuery,
   type SearchParamValues,
 } from '@/modules/search/product-search.schema';
 import { categoryArtUrl } from '@/modules/catalogue/catalogue-art';
-import { searchStorefront } from '@/modules/storefront/storefront-search.service';
+import {
+  searchStorefront,
+  type StorefrontSearchResult,
+} from '@/modules/storefront/storefront-search.service';
+import { getStorefrontCategoryTree } from '@/modules/taxonomy/storefront-category.cache';
+import { Money } from '@/lib/money';
 
 export type StorefrontSearchParams = Promise<Record<string, string | string[] | undefined>>;
 
@@ -50,6 +59,89 @@ export function parseStorefrontQuery(
   return { query: { ...defaultQuery, categorySlug }, isValid: false };
 }
 
+// Moving to another category keeps the search text, price, stock and sort; brand and attribute choices
+// belong to the category they were made in, so they are left behind.
+function categoryState(state: SearchUrlState): SearchUrlState {
+  return { ...state, brandSlugs: [], attributeFilters: [], page: 1 };
+}
+
+async function categoryLinksFor(
+  category: StorefrontSearchResult['category'],
+  state: SearchUrlState,
+): Promise<FilterCategoryLinks> {
+  const carried = categoryState(state);
+  const linkTo = (slug: string) => searchHref(`/categories/${slug}`, carried);
+  if (category === null) {
+    const departments = await getStorefrontCategoryTree();
+    return {
+      up: null,
+      links: departments.map(({ name, slug }) => ({ name, href: linkTo(slug) })),
+    };
+  }
+  const parent = category.trail.at(-2);
+  return {
+    up:
+      parent === undefined
+        ? { label: 'All products', href: searchHref('/search', carried) }
+        : { label: parent.name, href: linkTo(parent.slug) },
+    links: category.children.map(({ name, slug }) => ({ name, href: linkTo(slug) })),
+  };
+}
+
+type ActiveFilter = Readonly<{ label: string; removeHref: string }>;
+
+function activeFiltersOf(
+  basePath: string,
+  state: SearchUrlState,
+  facets: StorefrontSearchResult['facets'],
+): ActiveFilter[] {
+  const without = (change: Partial<SearchUrlState>) =>
+    searchHref(basePath, { ...state, ...change, page: 1 });
+  const filters: ActiveFilter[] = state.brandSlugs.map((slug) => ({
+    label: facets.brands.find((brand) => brand.slug === slug)?.name ?? slug,
+    removeHref: without({ brandSlugs: state.brandSlugs.filter((brandSlug) => brandSlug !== slug) }),
+  }));
+  if (state.minPriceRupees !== undefined || state.maxPriceRupees !== undefined) {
+    const rupees = (value: number) => Money.formatRupees(Money.fromPaise(value * 100));
+    filters.push({
+      label:
+        state.minPriceRupees !== undefined && state.maxPriceRupees !== undefined
+          ? `${rupees(state.minPriceRupees)} – ${rupees(state.maxPriceRupees)}`
+          : state.minPriceRupees !== undefined
+            ? `From ${rupees(state.minPriceRupees)}`
+            : `Up to ${rupees(state.maxPriceRupees ?? 0)}`,
+      removeHref: without({ minPriceRupees: undefined, maxPriceRupees: undefined }),
+    });
+  }
+  if (state.inStockOnly)
+    filters.push({ label: 'In stock', removeHref: without({ inStockOnly: false }) });
+  if (state.minimumRating !== undefined) {
+    filters.push({
+      label: `${String(state.minimumRating)}★ & above`,
+      removeHref: without({ minimumRating: undefined }),
+    });
+  }
+  for (const filter of state.attributeFilters) {
+    const label = facets.attributes.find(({ code }) => code === filter.code)?.label ?? filter.code;
+    for (const value of filter.values) {
+      const remaining = filter.values.filter((other) => other !== value);
+      filters.push({
+        label: `${label}: ${value}`,
+        removeHref: without({
+          attributeFilters: state.attributeFilters.flatMap((other) =>
+            other.code !== filter.code
+              ? [other]
+              : remaining.length === 0
+                ? []
+                : [{ code: other.code, values: remaining }],
+          ),
+        }),
+      });
+    }
+  }
+  return filters;
+}
+
 // Shared by /search and /categories/<slug>: filters, sort, results and URL pagination (C7–C12). Throws
 // CATEGORY_NOT_FOUND for an unknown category; the page maps it to notFound(). Results are live (stock,
 // Elasticsearch with a time-based fallback), so they render at request time: a prefetch's runtime
@@ -63,6 +155,8 @@ export async function StorefrontSearchView({
   await connection();
   const result = await searchStorefront(query);
   const state = searchUrlStateFromQuery(query);
+  const categoryLinks = await categoryLinksFor(result.category, state);
+  const activeFilters = activeFiltersOf(basePath, state, result.facets);
   const categoryArt =
     result.category === null ? null : categoryArtUrl(result.category.trail.at(-1)?.slug ?? '');
   const resultLabel = `${String(result.totalCount)} ${result.totalCount === 1 ? 'product' : 'products'}`;
@@ -146,8 +240,46 @@ export async function StorefrontSearchView({
         </nav>
       )}
       <div className="grid grid-cols-1 gap-xl md:grid-cols-[16rem_1fr]">
-        <FilterSidebar basePath={basePath} state={state} facets={result.facets} />
+        <FilterDrawer activeCount={activeFilters.length}>
+          <FilterSidebar
+            basePath={basePath}
+            state={state}
+            facets={result.facets}
+            categories={categoryLinks}
+          />
+        </FilterDrawer>
         <Flexbox direction="column" gap="xl">
+          {activeFilters.length === 0 ? null : (
+            <div className="flex flex-wrap items-center gap-sm">
+              <ul aria-label="Active filters" className="flex flex-wrap gap-sm">
+                {activeFilters.map((filter) => (
+                  <li key={filter.removeHref}>
+                    <NextLink
+                      href={filter.removeHref}
+                      aria-label={`Remove filter ${filter.label}`}
+                      className={`inline-flex items-center gap-xs rounded-pill border border-accent-light-2 bg-accent-light-1 px-md py-xs text-primary hover:border-primary ${focusRingClassNames} ${textClassNames({ variant: 'body3-medium' })}`}
+                    >
+                      {filter.label}
+                      <span aria-hidden="true">×</span>
+                    </NextLink>
+                  </li>
+                ))}
+              </ul>
+              <Link
+                href={searchHref(basePath, {
+                  text: state.text,
+                  brandSlugs: [],
+                  inStockOnly: false,
+                  attributeFilters: [],
+                  sort: state.sort,
+                  page: 1,
+                })}
+                variant="body3"
+              >
+                Clear all filters
+              </Link>
+            </div>
+          )}
           <SearchResultsGrid
             products={result.hits}
             emptyAction={<Link href={basePath}>Clear filters</Link>}

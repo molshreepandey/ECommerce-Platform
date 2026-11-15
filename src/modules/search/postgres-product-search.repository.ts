@@ -82,9 +82,14 @@ function productCardRows(relevance: Prisma.Sql, conditions: Prisma.Sql): Prisma.
     WHERE ${conditions}`;
 }
 
-function narrowingConditions(input: ProductSearchInput): Prisma.Sql {
+// Filters narrowing the visible products. A facet leaves out its own filter (omit), so its counts show
+// what each value would give with every other filter applied (multi-select facets).
+function narrowingConditions(
+  input: ProductSearchInput,
+  omit: { brand?: boolean; attributeCode?: string } = {},
+): Prisma.Sql {
   const conditions: Prisma.Sql[] = [Prisma.sql`true`];
-  if (input.brandSlugs.length > 0)
+  if (input.brandSlugs.length > 0 && omit.brand !== true)
     conditions.push(Prisma.sql`brand_slug = ANY(${input.brandSlugs})`);
   if (input.minPricePaise !== undefined) {
     conditions.push(Prisma.sql`min_price_paise >= ${input.minPricePaise}`);
@@ -97,6 +102,7 @@ function narrowingConditions(input: ProductSearchInput): Prisma.Sql {
     conditions.push(Prisma.sql`rating >= ${input.minimumRating}`);
   }
   for (const attribute of input.attributeFilters) {
+    if (attribute.code === omit.attributeCode) continue;
     conditions.push(Prisma.sql`(
       attributes ->> ${attribute.code} = ANY(${attribute.values})
       OR (jsonb_typeof(attributes -> ${attribute.code}) = 'array'
@@ -113,6 +119,7 @@ const orderBy: Record<ProductSort, Prisma.Sql> = {
   price_asc: Prisma.sql`min_price_paise, id`,
   price_desc: Prisma.sql`min_price_paise DESC, id`,
   newest: Prisma.sql`created_at DESC, id`,
+  discount: Prisma.sql`(mrp_paise - min_price_paise)::float / nullif(mrp_paise, 0) DESC NULLS LAST, min_price_paise, id`,
   rating: Prisma.sql`rating DESC NULLS LAST, review_count DESC, id`,
 };
 
@@ -139,41 +146,72 @@ const attributeRowsSchema = z.array(
   z.object({ code: z.string(), value: z.string(), count: z.number() }),
 );
 
+function attributeFacetRows(
+  database: DatabaseClient,
+  input: ProductSearchInput,
+  narrowing: Prisma.Sql,
+  onlyCode: string | null,
+) {
+  const codeCondition =
+    onlyCode === null ? Prisma.sql`true` : Prisma.sql`definition.code = ${onlyCode}`;
+  return database.$queryRaw`
+      WITH visible AS (${visibleProducts(input)}),
+           narrowed AS (SELECT * FROM visible WHERE ${narrowing})
+      SELECT definition.code, found.value, count(DISTINCT narrowed.id)::int AS count
+      FROM narrowed
+      JOIN attribute_definitions AS definition
+        ON definition.product_type_id = narrowed.product_type_id
+       AND definition.is_filterable AND definition.archived_at IS NULL AND ${codeCondition}
+      CROSS JOIN LATERAL (
+        SELECT jsonb_array_elements_text(
+                 CASE WHEN jsonb_typeof(narrowed.attributes -> definition.code) = 'array'
+                      THEN narrowed.attributes -> definition.code
+                      ELSE jsonb_build_array(narrowed.attributes -> definition.code) END) AS value
+        WHERE definition.scope = 'PRODUCT' AND narrowed.attributes ? definition.code
+        UNION ALL
+        SELECT variant.option_values ->> definition.code
+        FROM product_variants AS variant
+        WHERE definition.scope = 'VARIANT_OPTION' AND variant.product_id = narrowed.id
+          AND variant.status = 'ACTIVE' AND variant.option_values ? definition.code
+      ) AS found
+      WHERE found.value IS NOT NULL AND found.value <> ''
+      GROUP BY definition.code, found.value ORDER BY definition.code, found.value`;
+}
+
+// C10 counts: each value's count is the number of products the page would show with that value added,
+// so a facet counts with every filter applied except its own (brand counts ignore the brand filter;
+// colour counts ignore the colour filter but respect brand, price, stock, rating and other attributes).
 async function findFacets(
   database: DatabaseClient,
   input: ProductSearchInput,
 ): Promise<ProductSearchFacets> {
-  const brands = brandRowsSchema.parse(
-    await database.$queryRaw`
+  const visibleNarrowed = (narrowing: Prisma.Sql) => Prisma.sql`
       WITH visible AS (${visibleProducts(input)})
       SELECT brand_slug AS slug, min(brand_name) AS name, count(*)::int AS count
-      FROM visible GROUP BY brand_slug ORDER BY brand_slug`,
+      FROM visible WHERE ${narrowing} GROUP BY brand_slug ORDER BY brand_slug`;
+  const brands = brandRowsSchema.parse(
+    await database.$queryRaw(visibleNarrowed(narrowingConditions(input, { brand: true }))),
   );
-  const attributes = attributeRowsSchema.parse(
-    await database.$queryRaw`
-      WITH visible AS (${visibleProducts(input)})
-      SELECT definition.code, found.value, count(DISTINCT visible.id)::int AS count
-      FROM visible
-      JOIN attribute_definitions AS definition
-        ON definition.product_type_id = visible.product_type_id
-       AND definition.is_filterable AND definition.archived_at IS NULL
-      CROSS JOIN LATERAL (
-        SELECT jsonb_array_elements_text(
-                 CASE WHEN jsonb_typeof(visible.attributes -> definition.code) = 'array'
-                      THEN visible.attributes -> definition.code
-                      ELSE jsonb_build_array(visible.attributes -> definition.code) END) AS value
-        WHERE definition.scope = 'PRODUCT' AND visible.attributes ? definition.code
-        UNION ALL
-        SELECT variant.option_values ->> definition.code
-        FROM product_variants AS variant
-        WHERE definition.scope = 'VARIANT_OPTION' AND variant.product_id = visible.id
-          AND variant.status = 'ACTIVE' AND variant.option_values ? definition.code
-      ) AS found
-      WHERE found.value IS NOT NULL AND found.value <> ''
-      GROUP BY definition.code, found.value ORDER BY definition.code, found.value`,
+  const selectedCodes = new Set(input.attributeFilters.map((attribute) => attribute.code));
+  const unselected = attributeRowsSchema
+    .parse(await attributeFacetRows(database, input, narrowingConditions(input), null))
+    .filter((row) => !selectedCodes.has(row.code));
+  const selected = await Promise.all(
+    [...selectedCodes].map(async (code) =>
+      attributeRowsSchema.parse(
+        await attributeFacetRows(
+          database,
+          input,
+          narrowingConditions(input, { attributeCode: code }),
+          code,
+        ),
+      ),
+    ),
   );
   const valuesByCode = new Map<string, { value: string; count: number }[]>();
-  for (const row of attributes) {
+  for (const row of [...unselected, ...selected.flat()].sort(
+    (left, right) => left.code.localeCompare(right.code) || left.value.localeCompare(right.value),
+  )) {
     const values = valuesByCode.get(row.code) ?? [];
     values.push({ value: row.value, count: row.count });
     valuesByCode.set(row.code, values);

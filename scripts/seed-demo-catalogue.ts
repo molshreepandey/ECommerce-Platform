@@ -1,5 +1,6 @@
 // `npm run db:seed:catalogue`: loads the demo catalogue (products, categories, brands, collections,
-// banners, warehouses, opening stock) into the database at DATABASE_URL. No accounts, passwords,
+// banners, warehouses, opening stock) and, when no courier exists yet, the demo delivery coverage
+// (simulated couriers and the pincodes they serve, needed by checkout) into the database at DATABASE_URL. No accounts, passwords,
 // customers, orders or payments. Idempotent: a second run writes nothing. Refuses production; refuses
 // staging unless CONFIRM_DEMO_CATALOGUE_SEED=staging is set for this one command:
 //
@@ -31,7 +32,8 @@ try {
 // Imported only after the guard passed: these read the app configuration for APP_ENV.
 const { expireCacheTags, cacheTags } = await import('@/lib/cache-tags');
 const { createSeedClient } = await import('../prisma/seed/seed-client');
-const { seedDemoCatalogue } = await import('../prisma/seed/demo-catalogue.seed');
+const { seedDemoCatalogue, seedDemoDeliveryCoverage } =
+  await import('../prisma/seed/demo-catalogue.seed');
 
 console.log(
   `Loading the demo catalogue into ${databaseTarget(process.env['DATABASE_URL'])} (APP_ENV=${process.env['APP_ENV'] ?? ''}).`,
@@ -64,6 +66,12 @@ try {
       );
     }
   }
+  const delivery = await seedDemoDeliveryCoverage(client);
+  console.log(
+    delivery.outcome === 'seeded'
+      ? `Added delivery coverage: ${String(delivery.courierCount)} demo couriers serving ${String(delivery.pincodeCount)} pincode entries.`
+      : `Delivery coverage already configured (${String(delivery.courierCount)} couriers); nothing was written.`,
+  );
 } catch (error) {
   // The message only: database errors carry no secrets here, but never the connection string.
   console.error(

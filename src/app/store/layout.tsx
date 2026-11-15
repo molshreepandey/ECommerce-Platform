@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function StoreRootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <html lang="en-IN" className={GeistSans.variable}>
-      <body className="bg-background font-sans text-headings antialiased">
+      <body className="store-theme bg-background font-sans text-headings antialiased">
         <ThemeProvider surface="store" storeBranding={null}>
           <ToastProvider>{children}</ToastProvider>
         </ThemeProvider>

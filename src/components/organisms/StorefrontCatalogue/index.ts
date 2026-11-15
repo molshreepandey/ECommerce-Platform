@@ -1,7 +1,8 @@
 export { CategoryMenu } from './CategoryMenu';
 export { CategoryDirectory } from './CategoryDirectory';
 export { CategoryTreeList } from './CategoryTreeList';
-export { FilterSidebar } from './FilterSidebar';
+export { FilterDrawer } from './FilterDrawer';
+export { FilterSidebar, type FilterCategoryLinks } from './FilterSidebar';
 export { ProductDetail } from './ProductDetail';
 export { SearchResultsGrid } from './SearchResultsGrid';
 export { SortSelect } from './SortSelect';

@@ -1,4 +1,8 @@
-// Bundled images for the demo catalogue (public/catalogue-art/, drawn by scripts/generate-catalogue-art.ts).
+import photoCredits from './catalogue-photo-credits.json' with { type: 'json' };
+
+// Bundled images for the demo catalogue: product photographs from Wikimedia Commons in
+// public/catalogue-photos/ (credited on /credits), and, for a product without a photo, the drawing in
+// public/catalogue-art/ (scripts/generate-catalogue-art.ts).
 //
 // The demo seed stored placeholder photo URLs (picsum.photos/seed/<slug>-<n>/800/800), which show random,
 // unrelated photographs. Databases already loaded keep those rows, so the storefront and admin swap exactly
@@ -59,6 +63,31 @@ const seededProductImage =
 const seededBannerImage =
   /^https:\/\/(?:fastly\.)?picsum\.photos\/seed\/banner-([a-z-]+)\/1600\/500$/;
 
+export interface CataloguePhotoCredit {
+  slug: string;
+  title: string;
+  sourceUrl: string;
+  author: string;
+  license: string;
+  licenseUrl: string | null;
+  modified: string;
+}
+
+export const cataloguePhotoCredits: readonly CataloguePhotoCredit[] = photoCredits;
+const photographedSlugs: ReadonlySet<string> = new Set(photoCredits.map(({ slug }) => slug));
+
+export function productPhotoUrl(productSlug: string): string | null {
+  return photographedSlugs.has(productSlug)
+    ? `/catalogue-photos/products/${productSlug}.jpg`
+    : null;
+}
+
+// One photograph per product: every seeded view of a photographed product shows it (the gallery drops
+// repeats); a product without a photograph keeps its three drawn views.
+export function productImageFor(productSlug: string, view = 0): string {
+  return productPhotoUrl(productSlug) ?? productArtUrl(productSlug, view);
+}
+
 export function productArtUrl(productSlug: string, view = 0): string {
   return `/catalogue-art/products/${productSlug}-${String(view)}.svg`;
 }
@@ -67,7 +96,7 @@ export function displayImageUrl(url: string): string {
   const product = seededProductImage.exec(url);
   if (product !== null) {
     const [, slug = '', view = '0'] = product;
-    return catalogueArtProductSlugs.has(slug) ? productArtUrl(slug, Number(view)) : url;
+    return catalogueArtProductSlugs.has(slug) ? productImageFor(slug, Number(view)) : url;
   }
   const banner = seededBannerImage.exec(url);
   if (banner !== null) {
@@ -119,5 +148,5 @@ const categoryArtProductBySlug: Readonly<Record<string, string>> = {
 
 export function categoryArtUrl(categorySlug: string): string | null {
   const productSlug = categoryArtProductBySlug[categorySlug];
-  return productSlug === undefined ? null : productArtUrl(productSlug);
+  return productSlug === undefined ? null : productImageFor(productSlug);
 }

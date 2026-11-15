@@ -1,6 +1,7 @@
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { productSeeds } from './catalogue-data';
 import { seedCatalogue } from './catalogue.seed';
+import { seedCourierPartners } from './fulfilment.seed';
 import { seedInventory } from './inventory.seed';
 import { seedMerchandising } from './merchandising.seed';
 import { seedWarehouses } from './warehouses.seed';
@@ -47,5 +48,30 @@ export async function seedDemoCatalogue(client: PrismaClient): Promise<DemoCatal
     },
     // A remote database (Railway) needs a few hundred round trips; the default 5 s would abort it.
     { maxWait: 30_000, timeout: 15 * 60_000 },
+  );
+}
+
+export type DemoDeliveryCoverageResult =
+  | { outcome: 'seeded'; courierCount: number; pincodeCount: number }
+  | { outcome: 'already-present'; courierCount: number };
+
+// Checkout needs a courier that serves the delivery pincode. This adds the demo couriers (simulated
+// "demo_courier" adapter) and the pincodes they serve, only when the database has no courier at all, so
+// couriers an admin configured are never changed. One transaction; a second run writes nothing.
+export async function seedDemoDeliveryCoverage(
+  client: PrismaClient,
+): Promise<DemoDeliveryCoverageResult> {
+  const existing = await client.courierPartner.count();
+  if (existing > 0) return { outcome: 'already-present', courierCount: existing };
+  return client.$transaction(
+    async (transaction) => {
+      const couriers = await seedCourierPartners(transaction);
+      return {
+        outcome: 'seeded' as const,
+        courierCount: couriers.length,
+        pincodeCount: await transaction.courierServiceablePincode.count(),
+      };
+    },
+    { maxWait: 30_000, timeout: 5 * 60_000 },
   );
 }

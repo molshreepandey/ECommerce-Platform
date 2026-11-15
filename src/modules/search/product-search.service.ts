@@ -39,7 +39,7 @@ export function searchProducts(input: ProductSearchInput): Promise<ProductSearch
           index: productSearchAlias(),
           ...buildElasticsearchProductQuery(input),
         }),
-        input.page,
+        input,
       ),
     () => searchProductsInPostgres(getDatabase(), input),
   );

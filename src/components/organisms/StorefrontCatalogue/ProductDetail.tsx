@@ -37,7 +37,7 @@ function availabilityMessage(availableQuantity: number) {
 }
 
 function Gallery({
-  media,
+  media: allMedia,
   productName,
   preferredVariantId,
 }: Readonly<{
@@ -46,6 +46,12 @@ function Gallery({
   preferredVariantId: string | null;
 }>) {
   const [chosenMediaId, setChosenMediaId] = useState<string | null>(null);
+  // Several stored images can show the same picture (one bundled photograph per demo product): show it once.
+  const media = allMedia.filter(
+    (item, index) =>
+      allMedia.findIndex((other) => displayImageUrl(other.url) === displayImageUrl(item.url)) ===
+      index,
+  );
   const preferred = media.find((item) => item.variantId === preferredVariantId) ?? media[0];
   const shown = media.find((item) => item.id === chosenMediaId) ?? preferred;
   return (

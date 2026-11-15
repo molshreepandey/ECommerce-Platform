@@ -113,6 +113,13 @@ Never reuse the local placeholder credentials from `.env.example`.
    One transaction; a second run writes nothing; refused if the catalogue is only partly present, and
    always refused in production. Then `npm run search:reindex` once if Elasticsearch is used.
 
+   The same command also adds the demo **delivery coverage** (simulated couriers and the pincodes they
+   serve) when the database has no courier yet. Checkout refuses an order whose pincode no active courier
+   serves, so without couriers every order fails with "not serviceable". It never changes couriers an admin
+   configured (Admin → Couriers, with the pincode CSV import, is the alternative). It is safe to re-run on a
+   database whose catalogue is already loaded: the catalogue step reports "already loaded" and only the
+   missing delivery coverage is written.
+
 8. Verify the proxy hop count (blocker 3), store and admin journeys, and that the admin API answers 404 on
    the store host.
 

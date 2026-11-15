@@ -240,8 +240,14 @@ test('archiving the last active variant of an active product is refused, then th
   await signInAs(page, 'catalogue.manager@demo-store.test');
   await page.goto(productUrl);
   const [firstSku, secondSku] = [`TR-${suffix}-7`.toUpperCase(), `TR-${suffix}-8`.toUpperCase()];
+  const versionBeforeVariantArchive = await visibleText(page, /^Version \d+$/).textContent();
   await page.getByRole('button', { name: `Archive ${firstSku}` }).click();
   await expect(toast(page, 'Variant archived')).toBeVisible();
+  // Archiving the variant moves the product to a new version; "Archive product" sends the version shown
+  // on the page, so wait for the refreshed one (otherwise the server rightly refuses a stale version).
+  await expect(visibleText(page, /^Version \d+$/)).not.toHaveText(
+    versionBeforeVariantArchive ?? '',
+  );
   await page.getByRole('button', { name: `Archive ${secondSku}` }).click();
   await expect(
     visibleText(

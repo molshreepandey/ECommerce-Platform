@@ -7,6 +7,7 @@ import { Link } from '@/components/atoms/Link';
 import { Text } from '@/components/atoms/Text';
 import { FormField } from '@/components/molecules/FormField';
 import { attributeFilterPrefix, maximumPriceRupees } from '@/modules/search/product-search.schema';
+import { FilterAutoSubmit } from './FilterAutoSubmit';
 import { searchHref, type SearchUrlState } from './search-url';
 
 export type FilterFacets = Readonly<{
@@ -16,6 +17,11 @@ export type FilterFacets = Readonly<{
     label: string;
     values: readonly { value: string; count: number }[];
   }[];
+}>;
+
+export type FilterCategoryLinks = Readonly<{
+  up: { label: string; href: string } | null;
+  links: readonly { name: string; href: string }[];
 }>;
 
 const ratingThresholds = [4, 3, 2, 1] as const;
@@ -41,7 +47,13 @@ export function FilterSidebar({
   basePath,
   state,
   facets,
-}: Readonly<{ basePath: string; state: SearchUrlState; facets: FilterFacets }>) {
+  categories,
+}: Readonly<{
+  basePath: string;
+  state: SearchUrlState;
+  facets: FilterFacets;
+  categories?: FilterCategoryLinks | undefined;
+}>) {
   const selectedValues = new Map(
     state.attributeFilters.map((filter) => [filter.code, new Set(filter.values)]),
   );
@@ -66,7 +78,35 @@ export function FilterSidebar({
           Clear all
         </Link>
       </Flexbox>
+      {categories === undefined ||
+      (categories.up === null && categories.links.length === 0) ? null : (
+        <nav
+          aria-label="Filter by category"
+          className="flex flex-col gap-sm border-t border-strokes pt-md"
+        >
+          <Text as="span" variant="body2-medium">
+            Category
+          </Text>
+          <ul className="flex flex-col gap-xs">
+            {categories.up === null ? null : (
+              <li>
+                <Link href={categories.up.href} appearance="subtle" variant="body3">
+                  ‹ {categories.up.label}
+                </Link>
+              </li>
+            )}
+            {categories.links.map((link) => (
+              <li key={link.href}>
+                <Link href={link.href} appearance="plain" variant="body2">
+                  {link.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
       <form action={basePath} method="get" className="flex flex-col gap-md">
+        <FilterAutoSubmit />
         {state.text === undefined ? null : <Input type="hidden" name="q" value={state.text} />}
         {state.sort === 'relevance' ? null : <Input type="hidden" name="sort" value={state.sort} />}
         {state.minimumRating === undefined ? null : (

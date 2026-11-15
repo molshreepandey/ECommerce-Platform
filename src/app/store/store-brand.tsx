@@ -22,7 +22,7 @@ export async function StoreBrand() {
       >
         <span className="inline-flex items-center gap-sm">
           {branding.logoUrl === null ? (
-            <span className="inline-flex size-8 items-center justify-center rounded-card bg-linear-to-br from-primary-gradient-1 to-primary-gradient-2 text-white">
+            <span className="inline-flex size-8 items-center justify-center bg-primary text-white">
               <Icon name="store" size="sm" />
             </span>
           ) : (
@@ -35,7 +35,9 @@ export async function StoreBrand() {
               unoptimized
             />
           )}
-          <span className="text-heading2-5 tracking-tight">{branding.storeName}</span>
+          <span className="font-serif text-heading2-5 font-medium tracking-tight">
+            {branding.storeName}
+          </span>
         </span>
       </Link>
     </>
