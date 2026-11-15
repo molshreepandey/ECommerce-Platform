@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8f1ff"/><stop offset="1" stop-color="#f3e8ff"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><g transform="translate(400 420) scale(1.32) translate(-400 -420)">
+  <defs><linearGradient id="denim" x1="0" x2="1"><stop offset="0" stop-color="#5272a6"/><stop offset=".5" stop-color="#3a5f9a"/><stop offset="1" stop-color="#315183"/></linearGradient></defs>
+  <path d="M286,210 L514,210 L540,702 L418,702 L400,352 L382,702 L260,702 Z" fill="url(#denim)"/>
+  <rect x="282" y="168" width="236" height="44" rx="6" fill="#335488"/>
+  <path d="M282,190 H518" stroke="#d9a24a" stroke-width="2" stroke-dasharray="6 5"/>
+  <rect x="294" y="164" width="12" height="52" rx="3" fill="#2c4774"/><rect x="346" y="164" width="12" height="52" rx="3" fill="#2c4774"/><rect x="442" y="164" width="12" height="52" rx="3" fill="#2c4774"/><rect x="494" y="164" width="12" height="52" rx="3" fill="#2c4774"/>
+  <path d="M300,214 Q330,270 370,260 M500,214 Q470,270 430,260" fill="none" stroke="#d9a24a" stroke-width="3"/>
+  <path d="M400,212 V340 Q392,360 380,350" fill="none" stroke="#d9a24a" stroke-width="3"/>
+  <circle cx="400" cy="190" r="9" fill="#c9a24f"/>
+  <path d="M268,690 L380,690 M420,690 L532,690" stroke="#d9a24a" stroke-width="3" stroke-dasharray="6 5"/>
+  <path d="M330,300 Q340,470 320,690 M470,300 Q460,470 480,690" fill="none" stroke="#617fae" stroke-width="6" opacity=".5"/></g></g>
+</svg>

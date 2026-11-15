@@ -4,6 +4,7 @@ import { Link } from '@/components/atoms/Link';
 import { Text } from '@/components/atoms/Text';
 import { formatPaise } from '@/lib/money';
 import type { OrderItem } from './order-view.types';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 function optionText(optionValues: unknown): string {
   if (typeof optionValues !== 'object' || optionValues === null) return '';
@@ -35,7 +36,7 @@ export function OrderItemsList({
                 </div>
               ) : (
                 <Image
-                  src={item.imageUrl}
+                  src={displayImageUrl(item.imageUrl)}
                   alt={item.productName}
                   fill
                   sizes="64px"

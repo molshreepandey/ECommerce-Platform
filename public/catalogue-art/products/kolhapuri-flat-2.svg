@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7f7f8"/><stop offset="1" stop-color="#f1f1f4"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><circle cx="400" cy="400" r="300" fill="#ffffff" opacity=".7"/><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/><g transform="translate(400 420) scale(.86) translate(-400 -420)">
+  <defs><pattern id="p2" width="16" height="16" patternUnits="userSpaceOnUse">
+    <rect width="16" height="16" fill="#94683f"/><path d="M0,8 L8,0 L16,8 L8,16 Z" fill="none" stroke="#cba17b" stroke-width="2"/>
+  </pattern></defs>
+  <path d="M300,230 Q370,214 396,300 Q420,420 404,560 Q392,660 340,664 Q288,660 276,560 Q256,420 274,300 Q296,226 300,230 Z" fill="#b9824f"/>
+  <path d="M300,242 Q360,232 382,300 Q404,420 390,556 Q380,646 340,650 Q300,646 290,556 Q270,420 286,300 Q298,238 300,242 Z" fill="#c79b72"/>
+  <path d="M270,400 Q336,360 406,400 L406,446 Q336,410 270,446 Z" fill="url(#p2)"/>
+  <circle cx="330" cy="300" r="16" fill="none" stroke="#785533" stroke-width="8"/>
+  <path d="M330,316 L336,390" stroke="#785533" stroke-width="8"/>
+  <path d="M470,230 Q540,214 566,300 Q590,420 574,560 Q562,660 510,664 Q458,660 446,560 Q426,420 444,300 Q466,226 470,230 Z" fill="#b9824f"/>
+  <path d="M470,242 Q530,232 552,300 Q574,420 560,556 Q550,646 510,650 Q470,646 460,556 Q440,420 456,300 Q468,238 470,242 Z" fill="#c79b72"/>
+  <path d="M440,400 Q506,360 576,400 L576,446 Q506,410 440,446 Z" fill="url(#p2)"/>
+  <circle cx="500" cy="300" r="16" fill="none" stroke="#785533" stroke-width="8"/>
+  <path d="M500,316 L506,390" stroke="#785533" stroke-width="8"/></g></g>
+</svg>

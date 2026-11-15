@@ -18,6 +18,8 @@ import {
   optionValueState,
   selectOptionValue,
 } from './variant-selection';
+import { focusRingClassNames } from '@/components/atoms/focus-ring';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 const lowStockThreshold = 5;
 
@@ -55,7 +57,7 @@ function Gallery({
           </div>
         ) : (
           <Image
-            src={shown.url}
+            src={displayImageUrl(shown.url)}
             alt={shown.altText === '' ? productName : shown.altText}
             fill
             sizes="(max-width: 768px) 100vw, 50vw"
@@ -67,20 +69,31 @@ function Gallery({
       </div>
       {media.length < 2 ? null : (
         <ul aria-label="Product images" className="flex flex-wrap gap-sm">
-          {media.map((item, index) => (
-            <li key={item.id}>
-              <Button
-                appearance={item.id === shown?.id ? 'primary' : 'default'}
-                size="sm"
-                aria-pressed={item.id === shown?.id}
-                onClick={() => {
-                  setChosenMediaId(item.id);
-                }}
-              >
-                Image {index + 1}
-              </Button>
-            </li>
-          ))}
+          {media.map((item, index) => {
+            const isShown = item.id === shown?.id;
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  aria-label={`Image ${String(index + 1)}`}
+                  aria-pressed={isShown}
+                  onClick={() => {
+                    setChosenMediaId(item.id);
+                  }}
+                  className={`relative block size-16 overflow-hidden rounded-default border-2 bg-strokes transition-colors sm:size-20 ${isShown ? 'border-primary' : 'border-lowlight hover:border-accent-light-2'} ${focusRingClassNames}`}
+                >
+                  <Image
+                    src={displayImageUrl(item.url)}
+                    alt=""
+                    fill
+                    sizes="80px"
+                    className="object-cover"
+                    unoptimized
+                  />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

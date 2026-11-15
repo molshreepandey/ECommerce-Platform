@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5faf5"/><stop offset="1" stop-color="#eef7ee"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><g transform="translate(400 420) scale(1.32) translate(-400 -420)">
+  <defs><linearGradient id="glass" x1="0" x2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".55"/><stop offset=".3" stop-color="#ffffff" stop-opacity="0"/></linearGradient></defs>
+  <rect x="372" y="160" width="56" height="70" rx="10" fill="#d1b06a"/>
+  <rect x="382" y="226" width="36" height="34" fill="#e7eef2"/>
+  <path d="M330,300 Q330,260 382,256 L418,256 Q470,260 470,300 L476,626 Q476,646 456,646 L344,646 Q324,646 324,626 Z" fill="#f6c6d4"/>
+  <path d="M330,300 Q330,260 382,256 L418,256 Q470,260 470,300 L476,626 Q476,646 456,646 L344,646 Q324,646 324,626 Z" fill="url(#glass)"/>
+  <rect x="338" y="400" width="124" height="170" rx="10" fill="#ffffff"/>
+  <ellipse cx="400" cy="444" rx="11" ry="20" transform="rotate(0 400 458)" fill="#e0567f"/><ellipse cx="400" cy="444" rx="11" ry="20" transform="rotate(72 400 458)" fill="#e0567f"/><ellipse cx="400" cy="444" rx="11" ry="20" transform="rotate(144 400 458)" fill="#e0567f"/><ellipse cx="400" cy="444" rx="11" ry="20" transform="rotate(216 400 458)" fill="#e0567f"/><ellipse cx="400" cy="444" rx="11" ry="20" transform="rotate(288 400 458)" fill="#e0567f"/>
+  <circle cx="400" cy="458" r="8" fill="#f7c948"/>
+  <text x="400" y="512" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2" fill="#9f1d4a">ROSE WATER</text>
+  <text x="400" y="534" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2" fill="#9f1d4a">TONER</text>
+  <text x="400" y="556" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="11" font-weight="400" letter-spacing="1" fill="#6b7280">Glow Botanica</text></g></g>
+</svg>

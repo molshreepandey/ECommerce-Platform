@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8f1ff"/><stop offset="1" stop-color="#f3e8ff"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><g transform="translate(400 420) scale(1.32) translate(-400 -420)">
+  <defs><pattern id="p1" width="10" height="10" patternUnits="userSpaceOnUse">
+    <path d="M0,5 H10" stroke="#d8c8ad" stroke-width="2"/><path d="M5,0 V10" stroke="#e9d9bf" stroke-width="1.5"/>
+  </pattern></defs>
+  <path d="M468,340 L612,340 L630,700 L566,700 L540,420 L520,700 L456,700 Z" fill="#d4c4a9"/>
+  <path d="M468,340 L612,340 L630,700 L566,700 L540,420 L520,700 L456,700 Z" fill="url(#p1)"/>
+  <path d="M262,160 L332,160 L366,176 L438,236 L410,288 L380,262 L384,640 L208,640 L212,262 L182,288 L154,236 L228,176 Z" fill="#e6d5b8"/>
+  <path d="M262,160 L332,160 L366,176 L438,236 L410,288 L380,262 L384,640 L208,640 L212,262 L182,288 L154,236 L228,176 Z" fill="url(#p1)"/>
+  <rect x="270" y="146" width="56" height="20" rx="6" fill="#c4b59c"/>
+  <path d="M298,166 V330" stroke="#ada08a" stroke-width="4"/>
+  <circle cx="306" cy="200" r="5" fill="#968a78"/><circle cx="306" cy="246" r="5" fill="#968a78"/><circle cx="306" cy="292" r="5" fill="#968a78"/>
+  <path d="M208,600 L384,600" stroke="#c4b59c" stroke-width="3" stroke-dasharray="8 6"/></g></g>
+</svg>

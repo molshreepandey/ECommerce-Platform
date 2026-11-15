@@ -106,3 +106,27 @@ describe('decideHostRouting on an unknown host', () => {
     expect(route('store.localhost:3000', '/api/storefront')).toEqual({ kind: 'not_found' });
   });
 });
+
+describe('decideHostRouting for bundled catalogue images', () => {
+  it('serves /catalogue-art/ files as they are on both surfaces', () => {
+    expect(route('store.localhost:3000', '/catalogue-art/products/ribbed-crop-top-0.svg')).toEqual({
+      kind: 'continue',
+      surface: 'store',
+    });
+    expect(route('admin.localhost:3000', '/catalogue-art/banners/festive.svg')).toEqual({
+      kind: 'continue',
+      surface: 'admin',
+    });
+  });
+
+  it('still refuses an unknown host and rewrites look-alike paths', () => {
+    expect(route('evil.example.com', '/catalogue-art/products/x.svg')).toEqual({
+      kind: 'not_found',
+    });
+    expect(route('store.localhost:3000', '/catalogue-artwork')).toEqual({
+      kind: 'rewrite',
+      pathname: '/store/catalogue-artwork',
+      surface: 'store',
+    });
+  });
+});

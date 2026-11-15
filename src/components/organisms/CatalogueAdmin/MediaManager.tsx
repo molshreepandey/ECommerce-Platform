@@ -14,6 +14,7 @@ import { type FieldErrors, firstMessages } from '@/lib/api-client';
 import { formReader } from '@/lib/form-values';
 import { addMediaSchema, updateMediaSchema } from '@/modules/catalogue/catalogue.schema';
 import { ActionFailure, useCatalogueAction } from './catalogue-actions';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 export type MediaItem = Readonly<{
   id: string;
@@ -142,7 +143,7 @@ export function MediaManager({
             >
               <div className="flex min-w-0 items-center gap-md">
                 <Image
-                  src={item.url}
+                  src={displayImageUrl(item.url)}
                   alt={item.altText}
                   width={64}
                   height={80}

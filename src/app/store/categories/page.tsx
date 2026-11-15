@@ -5,7 +5,8 @@ import { EmptyState } from '@/components/atoms/EmptyState';
 import { Flexbox } from '@/components/atoms/Flexbox';
 import { Heading } from '@/components/atoms/Heading';
 import { Skeleton } from '@/components/atoms/Skeleton';
-import { CategoryTreeList } from '@/components/organisms/StorefrontCatalogue';
+import { Text } from '@/components/atoms/Text';
+import { CategoryDirectory } from '@/components/organisms/StorefrontCatalogue';
 import { getStorefrontCategoryTree } from '@/modules/taxonomy/storefront-category.cache';
 import { StorePageFrame } from '../store-page-frame';
 
@@ -17,16 +18,21 @@ async function CategoryTree() {
   if (categories.length === 0) {
     return <EmptyState icon="package" headingLevel={2} title="No categories yet" />;
   }
-  return <CategoryTreeList categories={categories} label="All categories" />;
+  return <CategoryDirectory categories={categories} />;
 }
 
 export default function CategoriesPage() {
   return (
     <StorePageFrame>
-      <Flexbox direction="column" gap="lg">
-        <Heading level={1} variant="heading2">
-          All categories
-        </Heading>
+      <Flexbox direction="column" gap="xl">
+        <Flexbox direction="column" gap="xs">
+          <Heading level={1} variant="heading2">
+            All categories
+          </Heading>
+          <Text variant="body1" tone="subtitle">
+            Shop fashion, footwear, electronics and beauty by department.
+          </Text>
+        </Flexbox>
         <Suspense fallback={<Skeleton shape="block" height="lg" />}>
           <CategoryTree />
         </Suspense>

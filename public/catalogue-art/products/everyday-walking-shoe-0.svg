@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fef8f1"/><stop offset="1" stop-color="#fdf3e7"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/>
+  <defs><pattern id="p0" width="10" height="10" patternUnits="userSpaceOnUse">
+    <rect width="10" height="10" fill="#9aa1ab"/><circle cx="5" cy="5" r="2.2" fill="#7e848c"/>
+  </pattern></defs>
+  
+  <path d="M164,542 Q150,600 196,608 L604,608 Q644,604 644,542 Z" fill="#ffffff"/>
+  <path d="M168,572 H640" stroke="#cfd4dc" stroke-width="4"/>
+  <path d="M176,548 Q178,474 244,452 L380,414 Q430,400 460,374 L508,356 Q552,350 570,388 L604,458 Q640,500 636,548 Z" fill="url(#p0)"/>
+  <path d="M176,548 Q176,500 206,474 Q246,504 248,548 Z" fill="#7b8189"/>
+  <rect x="352" y="392" width="150" height="40" rx="12" transform="rotate(-22 427 412)" fill="#64696f"/>
+  <path d="M566,384 Q604,440 612,480 L636,548 L596,548 Q586,456 548,400 Z" fill="#3b82c4"/></g>
+</svg>

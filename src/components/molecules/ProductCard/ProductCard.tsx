@@ -7,6 +7,7 @@ import { Text, textClassNames } from '@/components/atoms/Text';
 import { discountPercent } from '../PriceTag/discount';
 import { PriceTag } from '../PriceTag';
 import type { ProductCardProps } from './product-card.types';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 // The whole card opens the product page: the name link stretches over it (one link, named by the product).
 // Variants (size, colour, storage) are chosen on the product page, where Add to cart lives.
@@ -21,7 +22,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </div>
         ) : (
           <Image
-            src={product.imageUrl}
+            src={displayImageUrl(product.imageUrl)}
             alt={product.imageAlt ?? product.name}
             fill
             sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"

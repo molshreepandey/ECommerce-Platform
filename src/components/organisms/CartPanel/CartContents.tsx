@@ -20,6 +20,7 @@ import { formReader } from '@/lib/form-values';
 import { formatPaise } from '@/lib/money';
 import type { CartLineView, CartLineWarning, CartView } from '@/modules/cart/cart.service';
 import { CartSummary } from './CartSummary';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 function warningText(warning: CartLineWarning): {
   tone: 'danger' | 'warning' | 'info';
@@ -68,7 +69,7 @@ function CartLine({
           </div>
         ) : (
           <Image
-            src={line.imageUrl}
+            src={displayImageUrl(line.imageUrl)}
             alt={line.imageAlt ?? line.productName}
             fill
             sizes="96px"

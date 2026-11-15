@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f9fb"/><stop offset="1" stop-color="#e9f5f8"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><circle cx="400" cy="400" r="300" fill="#ffffff" opacity=".7"/><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/><g transform="translate(400 420) scale(.86) translate(-400 -420)">
+  <rect x="356" y="170" width="20" height="90" rx="4" fill="#c4c9d1"/>
+  <rect x="424" y="170" width="20" height="90" rx="4" fill="#c4c9d1"/>
+  <path d="M276,262 L524,262 L560,300 L560,600 Q560,630 530,630 L306,630 Q276,630 276,600 Z" fill="#e0e1e3"/>
+  <rect x="246" y="250" width="290" height="380" rx="40" fill="#f4f5f7"/>
+  <text x="391" y="370" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="46" font-weight="700" letter-spacing="2" fill="#5b6270">65W</text>
+  <text x="391" y="404" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="500" letter-spacing="3" fill="#5b6270">GaN FAST CHARGE</text>
+  <rect x="336" y="470" width="110" height="30" rx="15" fill="#1b1f27"/><rect x="352" y="480" width="78" height="10" rx="5" fill="#4b5563"/><rect x="336" y="526" width="110" height="30" rx="15" fill="#1b1f27"/><rect x="352" y="536" width="78" height="10" rx="5" fill="#4b5563"/><rect x="336" y="582" width="110" height="30" rx="15" fill="#1b1f27"/><rect x="352" y="592" width="78" height="10" rx="5" fill="#4b5563"/></g></g>
+</svg>

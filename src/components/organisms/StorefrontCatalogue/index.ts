@@ -1,4 +1,5 @@
 export { CategoryMenu } from './CategoryMenu';
+export { CategoryDirectory } from './CategoryDirectory';
 export { CategoryTreeList } from './CategoryTreeList';
 export { FilterSidebar } from './FilterSidebar';
 export { ProductDetail } from './ProductDetail';

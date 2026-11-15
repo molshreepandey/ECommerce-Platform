@@ -54,7 +54,10 @@ export function FilterSidebar({
     page: 1,
   };
   return (
-    <aside aria-labelledby="filters-heading" className="flex flex-col gap-md">
+    <aside
+      aria-labelledby="filters-heading"
+      className="flex flex-col gap-md self-start rounded-card border border-lowlight bg-white p-lg shadow-sm"
+    >
       <Flexbox justify="between" align="center">
         <Heading level={2} variant="heading5" id="filters-heading">
           Filters

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fefaef"/><stop offset="1" stop-color="#fef6e4"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><circle cx="400" cy="400" r="300" fill="#ffffff" opacity=".7"/><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/><g transform="translate(400 420) scale(.86) translate(-400 -420)">
+  <path d="M300,196 L352,172 Q400,214 448,172 L500,196 L602,272 L558,346 L504,312 L506,660 Q400,676 294,660 L296,312 L242,346 L198,272 Z" fill="#25272c"/>
+  <path d="M352,172 Q400,214 448,172 L438,168 Q400,198 362,168 Z" fill="#18191d"/>
+  <path d="M352,172 Q400,214 448,172" fill="none" stroke="#1a1b1f" stroke-width="10"/>
+  <path d="M242,346 L198,272 M558,346 L602,272" stroke="#1e1f23" stroke-width="12"/>
+  <path d="M296,312 Q300,260 312,232 M504,312 Q500,260 488,232" fill="none" stroke="#212227" stroke-width="4"/></g></g>
+</svg>

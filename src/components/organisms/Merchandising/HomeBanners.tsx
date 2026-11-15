@@ -2,6 +2,7 @@ import Image from 'next/image';
 import NextLink from 'next/link';
 import { Text } from '@/components/atoms/Text';
 import { focusRingClassNames } from '@/components/atoms/focus-ring';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 export type HomeBanner = Readonly<{ id: string; title: string; imageUrl: string; linkUrl: string }>;
 
@@ -18,7 +19,7 @@ export function HomeBanners({ banners }: Readonly<{ banners: readonly HomeBanner
               className={`group relative block aspect-[16/7] overflow-hidden rounded-card bg-strokes ${focusRingClassNames}`}
             >
               <Image
-                src={banner.imageUrl}
+                src={displayImageUrl(banner.imageUrl)}
                 alt=""
                 fill
                 sizes="(max-width: 768px) 100vw, 50vw"

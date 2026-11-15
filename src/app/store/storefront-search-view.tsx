@@ -1,11 +1,14 @@
+import Image from 'next/image';
+import NextLink from 'next/link';
 import { connection } from 'next/server';
 import { Breadcrumb } from '@/components/atoms/Breadcrumb';
 import { Flexbox } from '@/components/atoms/Flexbox';
+import { focusRingClassNames } from '@/components/atoms/focus-ring';
 import { Heading } from '@/components/atoms/Heading';
 import { InlineAlert } from '@/components/atoms/InlineAlert';
 import { Link } from '@/components/atoms/Link';
 import { Pagination } from '@/components/atoms/Pagination';
-import { Text } from '@/components/atoms/Text';
+import { Text, textClassNames } from '@/components/atoms/Text';
 import {
   FilterSidebar,
   SearchResultsGrid,
@@ -18,6 +21,7 @@ import {
   type ProductSearchQuery,
   type SearchParamValues,
 } from '@/modules/search/product-search.schema';
+import { categoryArtUrl } from '@/modules/catalogue/catalogue-art';
 import { searchStorefront } from '@/modules/storefront/storefront-search.service';
 
 export type StorefrontSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -59,6 +63,8 @@ export async function StorefrontSearchView({
   await connection();
   const result = await searchStorefront(query);
   const state = searchUrlStateFromQuery(query);
+  const categoryArt =
+    result.category === null ? null : categoryArtUrl(result.category.trail.at(-1)?.slug ?? '');
   const resultLabel = `${String(result.totalCount)} ${result.totalCount === 1 ? 'product' : 'products'}`;
   return (
     <Flexbox direction="column" gap="lg">
@@ -74,15 +80,31 @@ export async function StorefrontSearchView({
         />
       )}
       <Flexbox direction="column-then-row" justify="between" gap="md">
-        <Flexbox direction="column" gap="xs">
-          <Heading level={1} variant="heading2">
-            {title}
-          </Heading>
-          <Text variant="body2" tone="muted">
-            {resultLabel}
-            {result.source === 'postgres' ? ' · basic search while full search is unavailable' : ''}
-          </Text>
-        </Flexbox>
+        <div className="flex items-center gap-md">
+          {categoryArt === null ? null : (
+            <span className="relative hidden size-16 shrink-0 overflow-hidden rounded-card border border-lowlight bg-white sm:block">
+              <Image
+                src={categoryArt}
+                alt=""
+                fill
+                sizes="64px"
+                className="object-cover"
+                unoptimized
+              />
+            </span>
+          )}
+          <Flexbox direction="column" gap="xs">
+            <Heading level={1} variant="heading2">
+              {title}
+            </Heading>
+            <Text variant="body2" tone="muted">
+              {resultLabel}
+              {result.source === 'postgres'
+                ? ' · basic search while full search is unavailable'
+                : ''}
+            </Text>
+          </Flexbox>
+        </div>
         <div className="w-full md:w-60">
           <SortSelect basePath={basePath} state={state} />
         </div>
@@ -95,13 +117,31 @@ export async function StorefrontSearchView({
       {result.category === null || result.category.children.length === 0 ? null : (
         <nav aria-label="Sub-categories">
           <ul className="flex flex-wrap gap-sm">
-            {result.category.children.map((child) => (
-              <li key={child.slug}>
-                <Link href={`/categories/${child.slug}`} variant="body2">
-                  {child.name}
-                </Link>
-              </li>
-            ))}
+            {result.category.children.map((child) => {
+              const childArt = categoryArtUrl(child.slug);
+              return (
+                <li key={child.slug}>
+                  <NextLink
+                    href={`/categories/${child.slug}`}
+                    className={`inline-flex items-center gap-sm rounded-pill border border-lowlight bg-white py-xs pr-md pl-xs text-headings transition-colors hover:border-primary hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body2-medium' })}`}
+                  >
+                    {childArt === null ? null : (
+                      <span className="relative block size-8 overflow-hidden rounded-pill bg-strokes">
+                        <Image
+                          src={childArt}
+                          alt=""
+                          fill
+                          sizes="32px"
+                          className="object-cover"
+                          unoptimized
+                        />
+                      </span>
+                    )}
+                    {child.name}
+                  </NextLink>
+                </li>
+              );
+            })}
           </ul>
         </nav>
       )}

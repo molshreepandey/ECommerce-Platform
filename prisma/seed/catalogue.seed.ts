@@ -179,7 +179,8 @@ function mrpForPrice(pricePaise: number, markupPercent: number): number {
   return Math.ceil((pricePaise * (100 + markupPercent)) / 100 / rupeeInPaise) * rupeeInPaise;
 }
 
-function productImageUrl(productSlug: string, position: number): string {
+// Exported for the test that checks every seeded image URL maps to the product's bundled image.
+export function productImageUrl(productSlug: string, position: number): string {
   return `https://picsum.photos/seed/${productSlug}-${position}/800/800`;
 }
 

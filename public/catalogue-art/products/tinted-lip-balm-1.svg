@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f5faf5"/><stop offset="1" stop-color="#eef7ee"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><g transform="translate(400 420) scale(1.32) translate(-400 -420)">
+  <g transform="rotate(-14 400 420)">
+    <rect x="356" y="300" width="88" height="300" rx="44" fill="#f7cbd6"/>
+    <rect x="356" y="300" width="88" height="110" rx="44" fill="#e86a8a"/>
+    <rect x="356" y="380" width="88" height="30" fill="#e86a8a"/>
+    <text x="400" y="500" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#a24a61">TINTED</text>
+    <text x="400" y="524" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#a24a61">LIP BALM</text>
+    <text x="400" y="552" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="12" font-weight="500" letter-spacing="1" fill="#a24a61">SPF 15</text>
+  </g>
+  <path d="M520,520 Q560,470 600,520 Q560,570 520,520 Z" fill="#e86a8a" opacity=".8"/></g></g>
+</svg>

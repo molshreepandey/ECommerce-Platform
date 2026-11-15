@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fefaef"/><stop offset="1" stop-color="#fef6e4"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><circle cx="400" cy="400" r="300" fill="#ffffff" opacity=".7"/><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/><g transform="translate(400 420) scale(.86) translate(-400 -420)">
+  <defs><pattern id="p2" width="46" height="46" patternUnits="userSpaceOnUse">
+    <circle cx="11" cy="11" r="5" fill="#ffffff"/><circle cx="34" cy="34" r="5" fill="#ffffff"/>
+    <path d="M34,4 l4,7 l-4,7 l-4,-7 Z M11,27 l4,7 l-4,7 l-4,-7 Z" fill="#ffffff" opacity=".7"/>
+  </pattern></defs>
+  <path d="M330,182 Q400,214 470,182 L522,198 L604,330 L566,354 L494,286 L470,372 Q560,520 618,702 Q400,736 182,702 Q240,520 330,372 L306,286 L234,354 L196,330 L278,198 Z" fill="#2e3f8f"/>
+  <path d="M330,182 Q400,214 470,182 L522,198 L604,330 L566,354 L494,286 L470,372 Q560,520 618,702 Q400,736 182,702 Q240,520 330,372 L306,286 L234,354 L196,330 L278,198 Z" fill="url(#p2)" opacity=".55"/>
+  <path d="M358,184 Q400,252 442,184" fill="#1e295d"/>
+  <path d="M330,372 Q400,392 470,372" fill="none" stroke="#d9a440" stroke-width="12"/>
+  <path d="M188,690 Q400,724 612,690" fill="none" stroke="#d9a440" stroke-width="14"/>
+  <path d="M234,354 L196,330 M566,354 L604,330" stroke="#d9a440" stroke-width="10"/></g></g>
+</svg>

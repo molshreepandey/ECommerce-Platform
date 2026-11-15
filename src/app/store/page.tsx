@@ -17,6 +17,7 @@ import type { ProductSearchQuery } from '@/modules/search/product-search.schema'
 import { searchStorefront } from '@/modules/storefront/storefront-search.service';
 import { getStorefrontCategoryTree } from '@/modules/taxonomy/storefront-category.cache';
 import { StorePageFrame } from './store-page-frame';
+import { categoryArtUrl, displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 const storePromises: readonly { title: string; description: string; icon: IconName }[] = [
   {
@@ -106,7 +107,7 @@ async function HeroShowcase() {
             className={`group relative block aspect-square overflow-hidden rounded-card bg-white/10 shadow-lg ${focusRingClassNames}`}
           >
             <Image
-              src={product.imageUrl ?? ''}
+              src={displayImageUrl(product.imageUrl ?? '')}
               alt={product.imageAlt ?? product.name}
               fill
               sizes="(max-width: 768px) 45vw, 280px"
@@ -183,15 +184,29 @@ async function TopCategories() {
       <ul className="grid grid-cols-2 gap-sm sm:gap-lg lg:grid-cols-4">
         {categories.map((category) => {
           const look = categoryLooks[category.slug] ?? neutralCategoryLook;
+          const artUrl = categoryArtUrl(category.slug);
           return (
             <li key={category.id}>
               <NextLink
                 href={`/categories/${category.slug}`}
                 className={`group flex h-full flex-col gap-sm rounded-card p-md transition-shadow hover:shadow-lg sm:p-lg ${look.tileClassName} ${focusRingClassNames}`}
               >
-                <span className="inline-flex size-10 items-center justify-center rounded-pill bg-white text-primary shadow-sm sm:size-12">
-                  <Icon name={look.icon} size="md" />
-                </span>
+                {artUrl === null ? (
+                  <span className="inline-flex size-10 items-center justify-center rounded-pill bg-white text-primary shadow-sm sm:size-12">
+                    <Icon name={look.icon} size="md" />
+                  </span>
+                ) : (
+                  <span className="relative block aspect-[4/3] w-full overflow-hidden rounded-card bg-white/60">
+                    <Image
+                      src={artUrl}
+                      alt=""
+                      fill
+                      sizes="(max-width: 1024px) 45vw, 260px"
+                      className="object-cover transition-transform duration-300 group-hover:scale-105"
+                      unoptimized
+                    />
+                  </span>
+                )}
                 <Text as="span" variant="body1-medium">
                   {category.name}
                 </Text>

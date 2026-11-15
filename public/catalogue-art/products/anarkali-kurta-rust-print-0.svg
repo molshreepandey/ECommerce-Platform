@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdf5f7"/><stop offset="1" stop-color="#fbeff2"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/>
+  <defs><pattern id="p0" width="46" height="46" patternUnits="userSpaceOnUse">
+    <circle cx="11" cy="11" r="5" fill="#f6e3c5"/><circle cx="34" cy="34" r="5" fill="#f6e3c5"/>
+    <path d="M34,4 l4,7 l-4,7 l-4,-7 Z M11,27 l4,7 l-4,7 l-4,-7 Z" fill="#f6e3c5" opacity=".7"/>
+  </pattern></defs>
+  <path d="M330,182 Q400,214 470,182 L522,198 L604,330 L566,354 L494,286 L470,372 Q560,520 618,702 Q400,736 182,702 Q240,520 330,372 L306,286 L234,354 L196,330 L278,198 Z" fill="#b5532a"/>
+  <path d="M330,182 Q400,214 470,182 L522,198 L604,330 L566,354 L494,286 L470,372 Q560,520 618,702 Q400,736 182,702 Q240,520 330,372 L306,286 L234,354 L196,330 L278,198 Z" fill="url(#p0)" opacity=".55"/>
+  <path d="M358,184 Q400,252 442,184" fill="#76361b"/>
+  <path d="M330,372 Q400,392 470,372" fill="none" stroke="#d9a440" stroke-width="12"/>
+  <path d="M188,690 Q400,724 612,690" fill="none" stroke="#d9a440" stroke-width="14"/>
+  <path d="M234,354 L196,330 M566,354 L604,330" stroke="#d9a440" stroke-width="10"/></g>
+</svg>

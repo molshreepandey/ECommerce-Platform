@@ -17,6 +17,7 @@ import { fromLocalInput, toLocalInput } from '@/lib/date-input';
 import { formReader } from '@/lib/form-values';
 import { bannerSchema } from '@/modules/merchandising/merchandising.schema';
 import { useAdminAction } from '../AdminActions/use-admin-action';
+import { displayImageUrl } from '@/modules/catalogue/catalogue-art';
 
 export type BannerItem = Readonly<{
   id: string;
@@ -108,7 +109,7 @@ export function BannerManager({
             >
               <div className="relative aspect-[16/5] overflow-hidden rounded-default bg-strokes">
                 <Image
-                  src={banner.imageUrl}
+                  src={displayImageUrl(banner.imageUrl)}
                   alt=""
                   fill
                   sizes="50vw"

@@ -11,6 +11,8 @@ export type HostRoutingDecision =
   | { kind: 'not_found' };
 
 const sharedApiPrefixes = ['/api/health'] as const;
+// Bundled static images in public/ (the demo catalogue art), served as files on both surfaces.
+const sharedStaticPrefixes = ['/catalogue-art/'] as const;
 const apiPrefixesBySurface: Record<Surface, readonly string[]> = {
   store: ['/api/store/'],
   admin: ['/api/admin/', '/api/webhooks/'],
@@ -39,6 +41,10 @@ export function decideHostRouting(
   if (request.host === null) return { kind: 'not_found' };
   const surface = resolveSurfaceForHost(request.host, surfaceHosts);
   if (surface === null) return { kind: 'not_found' };
+
+  if (sharedStaticPrefixes.some((prefix) => request.pathname.startsWith(prefix))) {
+    return { kind: 'continue', surface };
+  }
 
   if (matchesPrefix(request.pathname, '/api')) {
     return isApiPathAllowedOnSurface(request.pathname, surface)

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" width="800" height="800">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fefaef"/><stop offset="1" stop-color="#fef6e4"/></linearGradient>
+    <radialGradient id="shadow"><stop offset="0" stop-color="#000000" stop-opacity=".18"/><stop offset="1" stop-color="#000000" stop-opacity="0"/></radialGradient>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity=".14"/></filter>
+  </defs>
+  <rect width="800" height="800" fill="url(#bg)"/>
+  <g filter="url(#lift)"><circle cx="400" cy="400" r="300" fill="#ffffff" opacity=".7"/><ellipse cx="400" cy="680" rx="240" ry="22" fill="url(#shadow)"/><g transform="translate(400 420) scale(.86) translate(-400 -420)">
+  <defs><pattern id="p2" width="16" height="16" patternUnits="userSpaceOnUse">
+    <rect width="7" height="16" fill="#404144"/>
+  </pattern></defs>
+  <path d="M330,236 L326,150 Q340,140 352,150 L362,236 M470,236 L474,150 Q460,140 448,150 L438,236" fill="#26272b"/>
+  <path d="M318,236 L362,236 Q400,286 438,236 L482,236 L506,340 L512,488 Q400,506 288,488 L294,340 Z" fill="#26272b"/>
+  <path d="M318,236 L362,236 Q400,286 438,236 L482,236 L506,340 L512,488 Q400,506 288,488 L294,340 Z" fill="url(#p2)" opacity=".7"/>
+  <path d="M362,236 Q400,286 438,236" fill="none" stroke="#1b1b1e" stroke-width="8"/>
+  <path d="M288,470 Q400,488 512,470 L512,488 Q400,506 288,488 Z" fill="#1d1d20"/></g></g>
+</svg>
