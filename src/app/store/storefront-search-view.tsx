@@ -191,11 +191,10 @@ export async function StorefrontSearchView({
             <Heading level={1} variant="heading2">
               {title}
             </Heading>
+            {/* Which engine answered is an operations concern (logged by the search service and shown on
+                the admin Search index page), not something customers need to read. */}
             <Text variant="body2" tone="muted">
               {resultLabel}
-              {result.source === 'postgres'
-                ? ' · basic search while full search is unavailable'
-                : ''}
             </Text>
           </Flexbox>
         </div>
