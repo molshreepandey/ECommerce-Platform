@@ -9,6 +9,7 @@ import { Text } from '@/components/atoms/Text';
 import { ReportRangeForm } from '@/components/organisms/ReportsAdmin';
 import { formatPaise } from '@/lib/money';
 import type { StaffContext } from '@/modules/identity/access-control';
+import { canExportReport } from '@/modules/reporting/report-export.service';
 import {
   getReports,
   reportRangeSchema,
@@ -80,18 +81,20 @@ async function Reports({
               ['gst-summary', 'GST summary'],
               ['inventory', 'Stock by warehouse'],
             ] as const
-          ).map(([report, label]) => (
-            <ButtonLink
-              key={report}
-              size="sm"
-              iconBefore="arrow-down"
-              href={`/api/admin/reports/export/${report}?from=${range.fromDay}&to=${range.toDay}`}
-              prefetch={false}
-              download
-            >
-              {label}
-            </ButtonLink>
-          ))}
+          )
+            .filter(([report]) => canExportReport(staff, report))
+            .map(([report, label]) => (
+              <ButtonLink
+                key={report}
+                size="sm"
+                iconBefore="arrow-down"
+                href={`/api/admin/reports/export/${report}?from=${range.fromDay}&to=${range.toDay}`}
+                prefetch={false}
+                download
+              >
+                {label}
+              </ButtonLink>
+            ))}
         </div>
       </section>
       <Card as="section">

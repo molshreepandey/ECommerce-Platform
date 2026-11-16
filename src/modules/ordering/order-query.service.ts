@@ -14,6 +14,7 @@ import {
   listOrderAuditRows,
   listStaffOrderRows,
   type OrderDetailRow,
+  findOrderPageCursor,
   type OrderPageCursor,
 } from './order-query.repository';
 import { orderingErrors } from './ordering.errors';
@@ -60,11 +61,7 @@ async function cursorFor(
   orderId: string | undefined,
 ): Promise<OrderPageCursor | null> {
   if (orderId === undefined) return null;
-  const row = await database.order.findUnique({
-    where: { id: orderId.toLowerCase() },
-    select: { id: true, placedAt: true },
-  });
-  return row;
+  return findOrderPageCursor(database, orderId.toLowerCase());
 }
 
 function page<Row extends { id: string }>(rows: Row[], limit: number) {

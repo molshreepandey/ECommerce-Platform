@@ -9,7 +9,7 @@ import {
   buildPackingSlip,
   getManifest,
 } from '@/modules/ordering/order-documents.service';
-import { confirmOrder } from '@/modules/ordering/order-lifecycle.service';
+import { cancelOrderByStaff, confirmOrder } from '@/modules/ordering/order-lifecycle.service';
 import { createShipmentAwb, runShipmentAction } from '@/modules/ordering/shipment-actions.service';
 import { reallocateShipment } from '@/modules/ordering/shipment-reallocation.service';
 import { buildShippingLabel } from '@/modules/ordering/shipping-label.service';
@@ -372,6 +372,42 @@ describe('re-allocation (D34)', () => {
         ?.reservedQuantity,
     ).toBe(0);
     await runShipmentAction(order.staff, moved.shipmentId, 'pack', null, testMetadata());
+  });
+
+  it('cancels a re-allocated order, releasing only the stock the new shipment holds (BL-1)', async () => {
+    const order = await placedOrder(2);
+    const other = await createWarehouseRow({ priority: 5 });
+    await createStockLevelRow({
+      variantId: order.variant.variantId,
+      warehouseId: other.id,
+      onHandQuantity: 5,
+    });
+    const moved = await reallocateShipment(order.staff, order.shipmentId, other.id, testMetadata());
+    const cancelledEarlier = await database.shipment.findUniqueOrThrow({
+      where: { id: order.shipmentId },
+      select: { cancelledAt: true },
+    });
+    // Before the fix this was 409 RESERVATION_EXCEEDED: the moved shipment's lines were released again.
+    await cancelOrderByStaff(
+      order.staff,
+      order.orderId,
+      'Customer changed their mind',
+      testMetadata(),
+    );
+    const after = await orderWithRelations(order.orderId);
+    expect(after.status).toBe('CANCELLED');
+    expect(after.shipments.map(({ status }) => status)).toEqual(['CANCELLED', 'CANCELLED']);
+    expect((await stockTotals(order.variant.variantId)).reserved).toBe(0);
+    // The shipment cancelled by the move keeps its own cancellation time.
+    expect(
+      (
+        await database.shipment.findUniqueOrThrow({
+          where: { id: order.shipmentId },
+          select: { cancelledAt: true },
+        })
+      ).cancelledAt,
+    ).toEqual(cancelledEarlier.cancelledAt);
+    expect(moved.shipmentId).not.toBe(order.shipmentId);
   });
 
   it('refuses a warehouse without the stock (409) and leaves everything as it was', async () => {

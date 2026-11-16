@@ -89,8 +89,19 @@ test('categories page: departments, groups and subcategories all lead to their p
 }) => {
   await page.goto(`${storeOrigin}/categories`);
   await expect(page.getByRole('heading', { level: 1, name: 'All categories' })).toBeVisible();
-  for (const department of ['Apparel', 'Footwear', 'Electronics', 'Beauty']) {
-    await expect(page.getByRole('heading', { level: 2, name: department })).toBeVisible();
+  // By the seeded slug, not the name: the HTTP suite (run against the same server) adds its own root
+  // category called "Apparel", so a name match finds two departments.
+  for (const [slug, department] of [
+    ['apparel', 'Apparel'],
+    ['footwear', 'Footwear'],
+    ['electronics', 'Electronics'],
+    ['beauty', 'Beauty'],
+  ] as const) {
+    // Next keeps a hidden copy of the previous render, so match only the visible heading.
+    const heading = page.locator(`#department-heading-${slug}`).filter({ visible: true });
+    await expect(heading).toBeVisible();
+    await expect(heading).toHaveText(department);
+    await expect(heading).toHaveRole('heading');
   }
   const sectionHrefs = await page
     .locator('main a[href^="/categories/"]')
@@ -109,6 +120,45 @@ test('categories page: departments, groups and subcategories all lead to their p
   await expect(products(page)).toHaveCount(3);
   await expect(page.getByRole('navigation', { name: 'Breadcrumb' })).toContainText('Beauty');
   await expectNoHorizontalOverflow(page);
+});
+
+test('home page: a fifth department adds a row instead of covering the next section', async ({
+  page,
+  browser,
+}) => {
+  const admin = await browser.newPage();
+  await signInAdmin(admin, 'super.admin@demo-store.test');
+  const runId = Date.now().toString(36);
+  const created = await api(admin, 'POST', '/api/admin/categories', {
+    name: `Home layout ${runId}`,
+    slug: `home-layout-${runId}`,
+    parentId: null,
+  });
+  expect(created.status).toBe(201);
+  const categoryId = idOf(created, 'category');
+  const { cacheTags, expireCacheTags } = await import('../src/lib/cache-tags');
+  try {
+    await expireCacheTags([cacheTags.categories]);
+    await page.goto(`${storeOrigin}/`);
+    const section = page
+      .locator('section[aria-labelledby="top-categories"]')
+      .filter({ visible: true });
+    const tiles = section.getByRole('listitem');
+    await expect(tiles.filter({ hasText: `Home layout ${runId}` })).toBeVisible();
+    const sectionBox = await section.boundingBox();
+    expect(sectionBox).not.toBeNull();
+    const sectionBottom = (sectionBox?.y ?? 0) + (sectionBox?.height ?? 0);
+    for (const tile of await tiles.all()) {
+      const box = await tile.boundingBox();
+      expect(box).not.toBeNull();
+      expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(sectionBottom + 1);
+    }
+  } finally {
+    const deleted = await api(admin, 'DELETE', `/api/admin/categories/${categoryId}`);
+    expect(deleted.status).toBe(204);
+    await expireCacheTags([cacheTags.categories]);
+    await admin.close();
+  }
 });
 
 test('filters apply on their own, combine, count correctly, and clear', async ({ page }) => {

@@ -27,7 +27,7 @@ function CartLink({ itemCount }: Readonly<{ itemCount: number | null }>) {
     <Link href="/cart" appearance="subtle" aria-label={label}>
       <span className="inline-flex items-center gap-xs">
         <Icon name="shopping-cart" size="sm" />
-        Cart
+        <span className="hidden xl:inline">Cart</span>
         {itemCount === null || itemCount === 0 ? null : (
           <Badge tone="primary" size="sm" hasDot={false}>
             {itemCount}
@@ -47,11 +47,18 @@ export function StorePageFrame({
   searchText,
   headerActions,
   children,
-}: Readonly<{ searchText?: string | undefined; headerActions?: ReactNode; children: ReactNode }>) {
+  fullWidth = false,
+}: Readonly<{
+  searchText?: string | undefined;
+  headerActions?: ReactNode;
+  fullWidth?: boolean;
+  children: ReactNode;
+}>) {
   return (
     <StoreLayout
       storeName={storeName}
       navigationLinks={storeNavigationLinks}
+      fullWidth={fullWidth}
       brand={
         <Suspense
           fallback={

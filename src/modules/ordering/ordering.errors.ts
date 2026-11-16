@@ -30,6 +30,13 @@ export const orderingErrors = {
       message: `You already have ${String(maximum)} online orders waiting for payment. Pay for or cancel one first, or choose Cash on Delivery.`,
       details: { maximum },
     }),
+  orderTooLarge: (maximumPaise: number) =>
+    new DomainError({
+      kind: 'UNPROCESSABLE',
+      code: 'ORDER_TOO_LARGE',
+      message: 'This order is too large to place in one go. Split it into smaller orders.',
+      details: { maximumPaise },
+    }),
   codLimitExceeded: (maximumPaise: number) =>
     new DomainError({
       kind: 'UNPROCESSABLE',

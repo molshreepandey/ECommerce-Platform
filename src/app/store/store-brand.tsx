@@ -1,11 +1,11 @@
 import Image from 'next/image';
 import { connection } from 'next/server';
-import { Icon } from '@/components/atoms/Icon';
 import { Link } from '@/components/atoms/Link';
 import { getStoreBranding } from '@/modules/merchandising/store-branding.cache';
 
 // D52: store name, logo and primary colour from the branding setting, applied at request time without a
-// deploy. The colour is validated as #rrggbb before it is saved, so it can only set the variable.
+// deploy. The colour is validated as #rrggbb before it is saved, so it can only set the variable. Without
+// a logo the name stands alone as a serif wordmark.
 export async function StoreBrand() {
   await connection();
   const branding = await getStoreBranding();
@@ -21,11 +21,7 @@ export async function StoreBrand() {
         aria-label={`${branding.storeName} home`}
       >
         <span className="inline-flex items-center gap-sm">
-          {branding.logoUrl === null ? (
-            <span className="inline-flex size-8 items-center justify-center bg-primary text-white">
-              <Icon name="store" size="sm" />
-            </span>
-          ) : (
+          {branding.logoUrl === null ? null : (
             <Image
               src={branding.logoUrl}
               alt=""
@@ -35,7 +31,7 @@ export async function StoreBrand() {
               unoptimized
             />
           )}
-          <span className="font-serif text-heading2-5 font-medium tracking-tight">
+          <span className="font-serif text-[1.625rem] leading-none tracking-[0.02em] text-headings lg:text-[2rem]">
             {branding.storeName}
           </span>
         </span>

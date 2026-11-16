@@ -157,9 +157,14 @@ function successSchema(body: string): Record<string, unknown> {
 
 function successStatus(body: string): string {
   if (/status:\s*204|new Response\(null/.test(body)) return '204';
-  if (/status:\s*result\.replayed\s*\?\s*200\s*:\s*201/.test(body)) return '201';
-  if (/status:\s*201/.test(body)) return '201';
+  if (/status:\s*[\w.]+\s*\?\s*200\s*:\s*201/.test(body)) return '201';
+  if (/status:\s*201|CartResponse\([^)]*,\s*201\)/.test(body)) return '201';
   return '200';
+}
+
+// Idempotent creates answer 201 the first time and 200 when the same request is replayed.
+function isCreatedOrReplayed(body: string): boolean {
+  return /status:\s*[\w.]+\s*\?\s*200\s*:\s*201/.test(body);
 }
 
 function contentTypeOf(body: string): string {
@@ -262,6 +267,14 @@ async function main(): Promise<void> {
                         : {},
                   },
                 },
+          ...(isCreatedOrReplayed(handler.body)
+            ? {
+                '200': {
+                  description: 'Replay: this Idempotency-Key was already used for the same request',
+                  content: { [contentType]: { schema: successSchema(handler.body) } },
+                },
+              }
+            : {}),
           ...(bodySchemaName === undefined && querySchemaName === undefined
             ? {}
             : { '400': { $ref: '#/components/responses/ValidationFailed' } }),

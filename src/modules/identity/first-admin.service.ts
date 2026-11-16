@@ -74,39 +74,44 @@ export async function createFirstSuperAdmin(
 ): Promise<{ staffUserId: string; email: string }> {
   const passwordHash = await hashPassword(input.password);
   try {
-    return await database.$transaction(async (transaction) => {
-      // The staff-management lock serialises two bootstraps (and any staff change) in flight at once.
-      await lockStaffManagement(transaction);
-      const existingStaff = await transaction.staffUser.count();
-      if (existingStaff > 0) {
-        throw new FirstAdminRefusedError(
-          `Refusing: ${String(existingStaff)} staff account(s) already exist. The first admin is created ` +
-            'only once; add further staff on the admin Staff page.',
-        );
-      }
-      const roleIdByCode = await ensureRbacCatalogue(transaction);
-      const superAdminRoleId = roleIdByCode.get(superAdminRoleCode);
-      if (superAdminRoleId === undefined) {
-        throw new Error(`RBAC catalogue has no ${superAdminRoleCode} role`);
-      }
-      const created = await insertStaffUser(transaction, {
-        fullName: input.fullName,
-        email: input.email,
-        passwordHash,
-        roleIds: [superAdminRoleId],
-      });
-      await recordAuditEvent(transaction, {
-        actorType: 'SYSTEM',
-        actorId: null,
-        action: 'staff.bootstrapped',
-        entityType: 'staff_user',
-        entityId: created.id,
-        after: { email: input.email, fullName: input.fullName, roleCodes: superAdminRoleCode },
-        ipAddress: null,
-        requestId: null,
-      });
-      return { staffUserId: created.id, email: input.email };
-    });
+    return await database.$transaction(
+      async (transaction) => {
+        // The staff-management lock serialises two bootstraps (and any staff change) in flight at once.
+        await lockStaffManagement(transaction);
+        const existingStaff = await transaction.staffUser.count();
+        if (existingStaff > 0) {
+          throw new FirstAdminRefusedError(
+            `Refusing: ${String(existingStaff)} staff account(s) already exist. The first admin is created ` +
+              'only once; add further staff on the admin Staff page.',
+          );
+        }
+        const roleIdByCode = await ensureRbacCatalogue(transaction);
+        const superAdminRoleId = roleIdByCode.get(superAdminRoleCode);
+        if (superAdminRoleId === undefined) {
+          throw new Error(`RBAC catalogue has no ${superAdminRoleCode} role`);
+        }
+        const created = await insertStaffUser(transaction, {
+          fullName: input.fullName,
+          email: input.email,
+          passwordHash,
+          roleIds: [superAdminRoleId],
+        });
+        await recordAuditEvent(transaction, {
+          actorType: 'SYSTEM',
+          actorId: null,
+          action: 'staff.bootstrapped',
+          entityType: 'staff_user',
+          entityId: created.id,
+          after: { email: input.email, fullName: input.fullName, roleCodes: superAdminRoleCode },
+          ipAddress: null,
+          requestId: null,
+        });
+        return { staffUserId: created.id, email: input.email };
+      },
+      // Run once from a workstation against a hosted database: the catalogue upserts are dozens of round
+      // trips over the public proxy, well past Prisma's 5 s default, so allow up to two minutes.
+      { maxWait: 30_000, timeout: 120_000 },
+    );
   } catch (error) {
     if (isUniqueViolation(error)) {
       throw new FirstAdminRefusedError('Refusing: a staff account with this email already exists.');

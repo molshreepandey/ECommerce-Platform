@@ -52,6 +52,8 @@ import {
 } from './order.repository';
 import { orderingErrors } from './ordering.errors';
 
+// The largest amount an order row can hold (PostgreSQL integer, paise): about ₹2.1 crore.
+const maximumOrderAmountPaise = 2_147_483_647;
 const checkoutTransactionOptions = { maxWait: 5_000, timeout: 15_000 } as const;
 
 export interface PlacedOrder {
@@ -391,6 +393,11 @@ async function placeOrderOnce(
       );
     }
     const { breakdown } = priced;
+    // Order amounts are int4 columns: refuse (422) rather than fail the insert (500) when a large line's
+    // subtotal passes their range even though a coupon brings the total down.
+    if (breakdown.subtotalPaise > maximumOrderAmountPaise) {
+      throw orderingErrors.orderTooLarge(maximumOrderAmountPaise);
+    }
     if (breakdown.totalPaise !== input.expectedTotalPaise)
       throw orderingErrors.priceChanged(breakdown);
     if (input.paymentMethod === 'COD' && breakdown.totalPaise > settings.maxCodOrderValuePaise) {

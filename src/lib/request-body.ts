@@ -2,13 +2,26 @@ import type { z } from 'zod';
 
 import { DomainError } from '@/lib/errors';
 
+// Every JSON route reads at most this much. The largest legitimate body is a CSV import (1 MB of text,
+// which JSON escaping and UTF-8 can roughly triple), so 4 MB refuses nothing real while keeping an
+// unauthenticated client from making the server buffer an arbitrarily large body (API-7).
+export const maximumJsonBodyBytes = 4 * 1024 * 1024;
+
 export async function parseJsonBody<Schema extends z.ZodType>(
   request: Request,
   schema: Schema,
 ): Promise<z.infer<Schema>> {
+  const text = await readTextWithin(request, maximumJsonBodyBytes);
+  if (text === null) {
+    throw new DomainError({
+      kind: 'VALIDATION',
+      code: 'BODY_TOO_LARGE',
+      message: 'The request body is too large.',
+    });
+  }
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     throw new DomainError({
       kind: 'VALIDATION',

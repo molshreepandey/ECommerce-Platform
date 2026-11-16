@@ -7,7 +7,7 @@ import { addToCustomerCart, applyCouponToCustomerCart } from '@/modules/cart/car
 import { placeOrder, quoteCheckout } from '@/modules/ordering/checkout.service';
 import { cancelOrderByCustomer } from '@/modules/ordering/order-lifecycle.service';
 import { getDashboard, resolveReportRange } from '@/modules/reporting/report.service';
-import { buildReportExport } from '@/modules/reporting/report-export.service';
+import { buildReportExport, canExportReport } from '@/modules/reporting/report-export.service';
 
 import {
   checkoutWith,
@@ -112,7 +112,7 @@ beforeEach(async () => {
 describe('CSV exports (D8)', () => {
   it('orders, sales and GST exports reconcile with the order rows and the dashboard', async () => {
     await orders();
-    const staff = await createStaffMember(['reports.read']);
+    const staff = await createStaffMember(['reports.read', 'orders.read', 'customers.read']);
     const range = resolveReportRange({});
     const sales = await database.order.aggregate({
       where: { status: { not: 'CANCELLED' } },
@@ -155,6 +155,26 @@ describe('CSV exports (D8)', () => {
     const staff = await createStaffMember(['reports.read']);
     const csv = await buildReportExport(staff, 'inventory', resolveReportRange({}));
     expect(column(csv, 'on_hand').map(Number).sort()).toEqual([3, 7]);
+  });
+
+  it('orders export (customer names and emails) also needs orders.read and customers.read (SEC-1)', async () => {
+    await orders();
+    const range = resolveReportRange({});
+    // The catalogue manager role has reports.read only: aggregate exports, no customer details.
+    const reportsOnly = await createStaffMember(['reports.read']);
+    expect(await failure(buildReportExport(reportsOnly, 'orders', range))).toBe(
+      '403 PERMISSION_DENIED',
+    );
+    const withoutCustomers = await createStaffMember(['reports.read', 'orders.read']);
+    expect(await failure(buildReportExport(withoutCustomers, 'orders', range))).toBe(
+      '403 PERMISSION_DENIED',
+    );
+    expect(column(await buildReportExport(reportsOnly, 'sales', range), 'orders')).not.toEqual([]);
+    expect(canExportReport(reportsOnly, 'orders')).toBe(false);
+    expect(canExportReport(reportsOnly, 'gst-summary')).toBe(true);
+    const full = await createStaffMember(['reports.read', 'orders.read', 'customers.read']);
+    expect(canExportReport(full, 'orders')).toBe(true);
+    expect(column(await buildReportExport(full, 'orders', range), 'status')).toHaveLength(3);
   });
 
   it('needs reports.read (403)', async () => {

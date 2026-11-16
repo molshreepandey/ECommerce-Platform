@@ -23,7 +23,9 @@ export function insertOtpChallenge(
 }
 
 // Guarded: a locked, used or expired challenge never counts another attempt.
-export async function countWrongAttempt(
+// Claims one of the challenge's attempts before the code is compared, so parallel guesses cannot all be
+// evaluated against a count read earlier: null once all are used (or the challenge was consumed).
+export async function claimOtpAttempt(
   database: DatabaseClient,
   challengeId: string,
   maximum: number,
@@ -35,7 +37,8 @@ export async function countWrongAttempt(
   return rows[0]?.attempt_count ?? null;
 }
 
-// Single use: only one request can consume a challenge.
+// Single use: only one request can consume a challenge. Its attempt is already claimed (counted), so the
+// last allowed attempt has attempt_count = maximum.
 export async function consumeChallenge(
   database: DatabaseClient,
   challengeId: string,
@@ -43,7 +46,7 @@ export async function consumeChallenge(
 ): Promise<boolean> {
   const updated = await database.$executeRaw`
     UPDATE otp_challenges SET consumed_at = now()
-    WHERE id = ${challengeId}::uuid AND consumed_at IS NULL AND attempt_count < ${maximum} AND expires_at > now()`;
+    WHERE id = ${challengeId}::uuid AND consumed_at IS NULL AND attempt_count <= ${maximum} AND expires_at > now()`;
   return updated === 1;
 }
 

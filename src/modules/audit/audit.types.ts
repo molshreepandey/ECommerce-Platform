@@ -70,6 +70,7 @@ export const auditActions = [
   'order.cancelled',
   'payment.attempted',
   'payment.status_changed',
+  'payment.refund_due',
   'shipment.status_changed',
   'courier.partner_created',
   'courier.partner_updated',

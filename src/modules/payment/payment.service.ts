@@ -252,6 +252,10 @@ export async function expireUnpaidOnlineOrders(input: {
       await database.$transaction(async (transaction) => {
         const order = await lockOrder(transaction, id);
         if (order?.status !== 'PLACED') return;
+        // The list above was read without locks: a payment that succeeded since then has committed by now
+        // (it holds the order lock), and a paid order stays PLACED until staff confirm it. Never expire it.
+        const payment = await lockPaymentOfOrder(transaction, id);
+        if (payment?.status !== 'PENDING') return;
         await cancelOrderInTransaction(transaction, {
           orderId: id,
           actor: {

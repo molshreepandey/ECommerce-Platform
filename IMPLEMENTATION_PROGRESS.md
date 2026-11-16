@@ -2936,3 +2936,45 @@ Server log: 0 errors, 1 deliberate L43 timeout warning. Development database fin
 
 Server log: 0 errors, 1 deliberate L43 warning. Development fingerprint unchanged
 (`9cec751c29cab1faab002a9308e23887`). Nothing committed.
+
+## 2026-11-16 — Independent audit and fixes (TD-034)
+
+Starting state: `main` = `origin/main` = `6873446`; uncommitted homepage redesign (8 files) and the
+first-admin transaction timeout (`first-admin.service.ts`) preserved. Docker containers started with the
+owner's approval (`docker start`, nothing recreated).
+
+Baseline before any change:
+
+| Command                    | Result                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| format, typecheck, lint    | exit 0, exit 0, exit 0                                                                    |
+| `npm test`                 | exit 0, 62 files, **501 / 501**                                                           |
+| `npm run test:integration` | exit 0, 54 files, **560 / 560**                                                           |
+| `npm run build`            | exit 0                                                                                    |
+| `npm run test:http`        | exit 0, 14 files, **122 / 122**                                                           |
+| `npm run test:e2e`         | exit 1: **150 passed, 1 failed, 7 did not run** (categories page test, strict-mode match) |
+
+Audit: security, money/inventory/order logic, database/API consistency (three read-only reviews), the
+storefront and uncommitted homepage, and read-only GETs against the Railway deployment. Findings and
+decisions: TD-034. Fixed: BL-1 (cancel after re-allocation), BL-2 (expiry vs. payment race), BL-3 (refund
+marker), SEC-1 (orders CSV PII), SEC-2 (OTP attempts claimed before compare), API-1 (microsecond cursor),
+API-2 (OpenAPI codes), API-7 (JSON body cap), DB-3 (order amount range), UI-1 (home department grid),
+TEST-1 (categories E2E). BL-1, BL-2, API-1 and UI-1 tests were run against the old code and failed there.
+
+One intermittent 38 px horizontal overflow was seen once at 768 px in the catalogue-manager admin test. It
+was not reproduced in 18 repeats or by sampling the three pages 30 times each; not changed.
+
+Final:
+
+| Command                    | Result                          |
+| -------------------------- | ------------------------------- |
+| format, typecheck, lint    | exit 0, exit 0, exit 0          |
+| `npm test`                 | exit 0, **504 / 504**           |
+| `npm run test:integration` | exit 0, **568 / 568**           |
+| `npm run build`            | exit 0                          |
+| `npm run test:http`        | exit 0, 14 files, **123 / 123** |
+| `npm run test:e2e`         | exit 0, **159 / 159**           |
+
+Production (read-only GETs): pages, assets and APIs answer; `/api/health` reports `degraded` because
+Elasticsearch is not connected (search served by the PostgreSQL fallback). Development fingerprint
+unchanged (`9cec751c29cab1faab002a9308e23887`, 5 migrations). No migration, commit, push or deploy.

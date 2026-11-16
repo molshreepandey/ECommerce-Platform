@@ -5,7 +5,7 @@ import type { DatabaseClient } from '@/lib/db';
 export interface CustomerListFilters {
   search: string | null;
   status: CustomerStatus | null;
-  cursor: { createdAt: Date; id: string } | null;
+  cursor: CustomerPageCursor | null;
   limit: number;
 }
 
@@ -32,8 +32,8 @@ export function listCustomerRows(database: DatabaseClient, filters: CustomerList
             AND: [
               {
                 OR: [
-                  { createdAt: { lt: filters.cursor.createdAt } },
-                  { createdAt: filters.cursor.createdAt, id: { lt: filters.cursor.id } },
+                  { createdAt: { lt: filters.cursor.createdBefore } },
+                  { id: { in: filters.cursor.sameMillisecondIdsAfter } },
                 ],
               },
             ],
@@ -43,6 +43,32 @@ export function listCustomerRows(database: DatabaseClient, filters: CustomerList
     orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     take: filters.limit + 1,
   });
+}
+
+// Keyset pages on (created_at DESC, id DESC). created_at has microseconds but a JS Date only
+// milliseconds, so the rows inside the cursor's millisecond are compared in SQL (as for orders).
+export interface CustomerPageCursor {
+  createdBefore: Date;
+  sameMillisecondIdsAfter: string[];
+}
+
+export async function findCustomerPageCursor(
+  database: DatabaseClient,
+  customerId: string,
+): Promise<CustomerPageCursor | null> {
+  const rows = await database.$queryRaw<{ floor: Date; id: string | null }[]>`
+    SELECT date_trunc('milliseconds', c.created_at) AS floor, o.id::text AS id
+    FROM customers c
+    LEFT JOIN customers o
+      ON o.created_at >= date_trunc('milliseconds', c.created_at)
+     AND (o.created_at, o.id) < (c.created_at, c.id)
+    WHERE c.id = ${customerId}::uuid`;
+  const [first] = rows;
+  if (first === undefined) return null;
+  return {
+    createdBefore: first.floor,
+    sameMillisecondIdsAfter: rows.flatMap(({ id }) => (id === null ? [] : [id])),
+  };
 }
 
 export function findCustomerCursor(database: DatabaseClient, customerId: string) {

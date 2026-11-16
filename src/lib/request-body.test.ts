@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
-import { readTextWithin } from './request-body';
+import { DomainError } from './errors';
+import { maximumJsonBodyBytes, parseJsonBody, readTextWithin } from './request-body';
 
 function streamOf(parts: readonly string[]): ReadableStream<Uint8Array> {
   return new ReadableStream({
@@ -46,5 +48,33 @@ describe('readTextWithin (L1)', () => {
       }),
     );
     expect(await readTextWithin(request, 64)).toBe('₹799');
+  });
+});
+
+describe('parseJsonBody (API-7)', () => {
+  const schema = z.object({ name: z.string() });
+  const errorCode = (promise: Promise<unknown>) =>
+    promise.then(
+      () => null,
+      (error: unknown) => (error instanceof DomainError ? error.code : String(error)),
+    );
+
+  it('parses and validates a body within the limit', async () => {
+    const request = new Request('http://localhost/', { method: 'POST', body: '{"name":"Kurta"}' });
+    expect(await parseJsonBody(request, schema)).toEqual({ name: 'Kurta' });
+  });
+
+  it('refuses malformed and empty bodies as INVALID_JSON', async () => {
+    for (const body of ['{"name":', '']) {
+      const request = new Request('http://localhost/', { method: 'POST', body });
+      expect(await errorCode(parseJsonBody(request, schema))).toBe('INVALID_JSON');
+    }
+  });
+
+  it('refuses a body over the limit without buffering all of it', async () => {
+    const chunk = 'x'.repeat(1024 * 1024);
+    const parts = Array.from({ length: maximumJsonBodyBytes / chunk.length + 1 }, () => chunk);
+    const request = streamRequest(streamOf(parts));
+    expect(await errorCode(parseJsonBody(request, schema))).toBe('BODY_TOO_LARGE');
   });
 });

@@ -109,6 +109,35 @@ describe('reports reconcile with the order and payment rows (acceptance test 5)'
 });
 
 describe('customer administration (D44)', () => {
+  it('pages through customers created in the same millisecond without skipping any (API-1)', async () => {
+    const admin = await orderStaff(['customers.read']);
+    await database.customer.createMany({
+      data: Array.from({ length: 40 }, (_, index) => ({
+        fullName: `Page Customer ${String(index)}`,
+        email: `page.${String(index)}@example.test`,
+        phone: `9${String(800_000_000 + index)}`,
+        passwordHash: 'not-a-real-hash',
+      })),
+    });
+    // Same millisecond, different microseconds, in an order unrelated to the ids.
+    await database.$executeRaw`
+      UPDATE customers SET created_at = timestamptz '2026-11-01 10:00:00.123+00'
+        + (((hashtext(id::text) & 2147483647) % 900) * interval '1 microsecond')`;
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber += 1) {
+      const page = await listCustomers(admin, cursor === undefined ? {} : { cursor });
+      seen.push(...page.items.map(({ id }) => id));
+      if (page.nextCursor === null) break;
+      cursor = page.nextCursor;
+    }
+    expect(seen).toHaveLength(40);
+    expect(new Set(seen).size).toBe(40);
+    const expected = await database.$queryRaw<{ id: string }[]>`
+      SELECT id::text AS id FROM customers ORDER BY created_at DESC, id DESC`;
+    expect(seen).toEqual(expected.map(({ id }) => id));
+  });
+
   it('lists, shows order figures, blocks (sessions revoked, checkout 403) and unblocks', async () => {
     const admin = await orderStaff(['customers.read', 'customers.block', 'audit.read']);
     const variant = await stockedVariant([{ priority: 1, onHandQuantity: 10 }]);

@@ -131,6 +131,43 @@ describe('OTP login (C3)', () => {
     );
   });
 
+  it('a parallel burst of guesses uses up exactly the 5 attempts and signs nobody in (SEC-2)', async () => {
+    const phone = await customerWithPhone();
+    const { sender, sent } = capturingSender();
+    await requestLoginOtp({ phone }, testMetadata(), sender);
+    const right = sent[0]?.code ?? '';
+    // Twelve different wrong codes at once. The race this guards (a right code inside such a burst being
+    // compared after the attempts ran out) depends on timing, so it is prevented by construction instead:
+    // each attempt is claimed by one guarded UPDATE before its code is compared.
+    const wrongCodes = Array.from({ length: 12 }, (_, index) =>
+      String((Number(right) + index + 1) % 1_000_000).padStart(6, '0'),
+    );
+    await Promise.all(
+      wrongCodes.map((code) => codeOf(verifyLoginOtp({ phone, code }, testMetadata()))),
+    );
+    const stored = await database.otpChallenge.findFirstOrThrow({ where: { phone } });
+    expect(stored.attemptCount).toBe(5);
+    expect(await codeOf(verifyLoginOtp({ phone, code: right }, testMetadata()))).toBe(
+      '401 OTP_LOCKED',
+    );
+    expect(await database.session.count()).toBe(0);
+  });
+
+  it('signs in with the right code on the fifth and last attempt', async () => {
+    const phone = await customerWithPhone();
+    const { sender, sent } = capturingSender();
+    await requestLoginOtp({ phone }, testMetadata(), sender);
+    const right = sent[0]?.code ?? '';
+    const wrong = right === '000000' ? '111111' : '000000';
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      expect(await codeOf(verifyLoginOtp({ phone, code: wrong }, testMetadata()))).toBe(
+        '401 OTP_INVALID',
+      );
+    }
+    const signedIn = await verifyLoginOtp({ phone, code: right }, testMetadata());
+    expect(signedIn.customerId).toMatch(/^[0-9a-f-]{36}$/);
+  });
+
   it('enforces the 30-second resend cooldown, then issues a new code that replaces the old one', async () => {
     const phone = await customerWithPhone();
     const { sender, sent } = capturingSender();

@@ -11,6 +11,7 @@ import {
 import { assertStaffPermission, type RequestMetadata, type StaffContext } from './access-control';
 import {
   findCustomerCursor,
+  findCustomerPageCursor,
   findCustomerDetailRow,
   listCustomerRows,
   setCustomerStatusIfCurrent,
@@ -47,7 +48,7 @@ export async function listCustomers(
   const cursor =
     query.cursor === undefined
       ? null
-      : await findCustomerCursor(database, query.cursor.toLowerCase());
+      : await findCustomerPageCursor(database, query.cursor.toLowerCase());
   const rows = await listCustomerRows(database, {
     search: query.q ?? null,
     status: query.status ?? null,

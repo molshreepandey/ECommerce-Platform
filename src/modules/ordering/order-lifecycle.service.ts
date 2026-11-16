@@ -165,7 +165,7 @@ async function lockOrderWithShipments(
 
 // C34 / plan §7: whole order, only while nothing has shipped. Reservations are released, shipments and
 // the order cancelled, and a pending payment voided (or failed, when payment failure is the cause). A
-// collected online payment stays collected and is marked for a manual refund.
+// collected online payment stays collected and is marked for a manual refund (audit `payment.refund_due`).
 export async function cancelOrderInTransaction(
   transaction: DatabaseClient,
   input: {
@@ -202,15 +202,18 @@ export async function cancelOrderInTransaction(
       after: { orderId: order.id, reason: 'order_cancelled' },
     });
   }
+  // Only live shipments still hold stock: a shipment moved to another warehouse was cancelled and released
+  // its reservation then, and releasing it again would exceed what it holds (RESERVATION_EXCEEDED).
+  const liveShipments = shipments.filter(({ status }) => status !== 'CANCELLED');
   const release = await findShipmentStockLines(
     transaction,
-    shipments.map(({ id }) => id),
+    liveShipments.map(({ id }) => id),
   );
   if (release.length > 0) {
     await applyReservationChanges(transaction, inventoryActorFor(input.actor), { release });
   }
   const now = new Date();
-  for (const shipment of shipments) {
+  for (const shipment of liveShipments) {
     if (
       !(await updateShipmentIfCurrent(transaction, shipment.id, shipment.status, {
         status: 'CANCELLED',
@@ -224,6 +227,20 @@ export async function cancelOrderInTransaction(
   const payment = await findPaymentForOrder(transaction, order.id);
   if (payment?.status === 'PENDING') {
     await changePaymentStatus(transaction, order, 'PENDING', input.paymentOutcome, input.actor);
+  } else if (payment?.status === 'COLLECTED' && payment.amountPaise > 0) {
+    // L62: refunds of cancelled prepaid orders are made by hand; this marker (in the audit log) is the
+    // record that the amount is owed back to the customer.
+    await audit(transaction, input.actor, {
+      action: 'payment.refund_due',
+      entityType: 'order',
+      entityId: order.id,
+      after: {
+        paymentId: payment.id,
+        amountPaise: payment.amountPaise,
+        paymentMethod: payment.paymentMethod,
+        reason: 'order_cancelled',
+      },
+    });
   }
   return {
     order,
@@ -458,6 +475,23 @@ export async function applyShipmentChange(
       if (nextOrderStatus === 'RTO') {
         await changePaymentStatus(transaction, order, 'PENDING', 'FAILED', input.actor);
       }
+    } else if (
+      payment?.status === 'COLLECTED' &&
+      payment.amountPaise > 0 &&
+      nextOrderStatus === 'RTO'
+    ) {
+      // A prepaid order that came back undelivered: the payment is owed back (L62, refunded by hand).
+      await audit(transaction, input.actor, {
+        action: 'payment.refund_due',
+        entityType: 'order',
+        entityId: order.id,
+        after: {
+          paymentId: payment.id,
+          amountPaise: payment.amountPaise,
+          paymentMethod: payment.paymentMethod,
+          reason: 'returned_to_origin',
+        },
+      });
     }
   }
   return { order, shipment };

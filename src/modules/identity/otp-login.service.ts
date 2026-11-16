@@ -11,7 +11,7 @@ import type { RequestMetadata } from './access-control';
 import { indianMobileSchema } from './identity.schema';
 import {
   consumeChallenge,
-  countWrongAttempt,
+  claimOtpAttempt,
   findActiveCustomerByPhone,
   findLatestOtpChallenge,
   insertOtpChallenge,
@@ -115,7 +115,7 @@ export async function requestLoginOtp(
   };
 }
 
-// Constant-time compare on the latest challenge; 5 wrong codes lock it; a correct code is consumed once
+// Constant-time compare on the latest challenge; at most 5 attempts are evaluated (5 wrong codes lock it); a correct code is consumed once
 // and starts the normal customer session.
 export async function verifyLoginOtp(
   input: z.infer<typeof verifyOtpSchema>,
@@ -130,15 +130,16 @@ export async function verifyLoginOtp(
   if (challenge === null || challenge.consumedAt !== null) throw otpErrors.invalid();
   if (challenge.attemptCount >= maximumOtpAttempts) throw otpErrors.locked();
   if (challenge.expiresAt.getTime() <= Date.now()) throw otpErrors.expired();
+  // Every attempt, right or wrong, is counted before the compare (SEC-2: a burst of parallel guesses
+  // read the same count and were all evaluated).
+  const attempts = await claimOtpAttempt(database, challenge.id, maximumOtpAttempts);
+  if (attempts === null) throw otpErrors.locked();
   const matches = timingSafeEqual(
     Buffer.from(hashCode(challenge.id, input.code), 'hex'),
     Buffer.from(challenge.codeHash, 'hex'),
   );
   if (!matches) {
-    const attempts = await countWrongAttempt(database, challenge.id, maximumOtpAttempts);
-    throw attempts === null || attempts >= maximumOtpAttempts
-      ? otpErrors.locked()
-      : otpErrors.invalid();
+    throw attempts >= maximumOtpAttempts ? otpErrors.locked() : otpErrors.invalid();
   }
   return database.$transaction(async (transaction) => {
     if (!(await consumeChallenge(transaction, challenge.id, maximumOtpAttempts)))

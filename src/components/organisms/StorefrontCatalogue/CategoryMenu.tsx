@@ -3,7 +3,7 @@ import { focusRingClassNames } from '@/components/atoms/focus-ring';
 import { textClassNames } from '@/components/atoms/Text';
 import type { StorefrontCategory } from '@/modules/taxonomy/storefront-category.service';
 
-const departmentLinkClassNames = `inline-flex items-center whitespace-nowrap rounded-default py-xs text-headings hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body2-medium' })}`;
+const departmentLinkClassNames = `inline-flex items-center whitespace-nowrap rounded-default py-xs tracking-[0.14em] text-headings uppercase hover:text-primary ${focusRingClassNames} ${textClassNames({ variant: 'body3-medium' })}`;
 const panelLinkClassNames = `rounded-default text-subtitles hover:text-primary hover:underline ${focusRingClassNames} ${textClassNames({ variant: 'body2' })}`;
 
 function leavesOf(category: StorefrontCategory): StorefrontCategory[] {
@@ -22,7 +22,7 @@ export function CategoryMenu({
   if (categories.length === 0) return null;
   return (
     <nav aria-label="Shop by category">
-      <ul className="-mx-lg flex items-center gap-x-xl overflow-x-auto px-lg lg:relative lg:mx-0 lg:flex-wrap lg:gap-y-xs lg:overflow-visible lg:px-0">
+      <ul className="-mx-lg flex items-center gap-x-xl overflow-x-auto px-lg lg:relative lg:mx-0 lg:w-full lg:flex-wrap lg:justify-center lg:gap-x-2xl lg:gap-y-xs lg:overflow-visible lg:px-0">
         {categories.map((category) => (
           <li key={category.id} className="group">
             <NextLink href={`/categories/${category.slug}`} className={departmentLinkClassNames}>

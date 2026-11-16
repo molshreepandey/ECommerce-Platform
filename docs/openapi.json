@@ -3291,6 +3291,21 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Replay: this Idempotency-Key was already used for the same request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["stockRequest"],
+                  "properties": {
+                    "stockRequest": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Success",
             "content": {
@@ -3489,6 +3504,21 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Replay: this Idempotency-Key was already used for the same request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["stockRequest"],
+                  "properties": {
+                    "stockRequest": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Success",
             "content": {
@@ -3717,6 +3747,21 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Replay: this Idempotency-Key was already used for the same request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["stockRequest"],
+                  "properties": {
+                    "stockRequest": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
           "201": {
             "description": "Success",
             "content": {
@@ -8779,6 +8824,11 @@
                   "phone": {
                     "type": "string",
                     "pattern": "^[6-9]\\d{9}$"
+                  },
+                  "currentPassword": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
                   }
                 },
                 "additionalProperties": false
@@ -9358,7 +9408,7 @@
           }
         },
         "responses": {
-          "200": {
+          "201": {
             "description": "Success",
             "content": {
               "application/json": {
@@ -9503,6 +9553,21 @@
         },
         "responses": {
           "200": {
+            "description": "Replay: this Idempotency-Key was already used for the same request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["order"],
+                  "properties": {
+                    "order": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
             "description": "Success",
             "content": {
               "application/json": {
@@ -9839,6 +9904,21 @@
         },
         "responses": {
           "200": {
+            "description": "Replay: this Idempotency-Key was already used for the same request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["attempt"],
+                  "properties": {
+                    "attempt": {}
+                  },
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "201": {
             "description": "Success",
             "content": {
               "application/json": {
@@ -10331,6 +10411,9 @@
               }
             }
           },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
           "default": {
             "description": "Other errors (404, 409, 422, 503) in the error envelope",
             "content": {
@@ -10380,6 +10463,9 @@
           },
           "400": {
             "$ref": "#/components/responses/ValidationFailed"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
           },
           "default": {
             "description": "Other errors (404, 409, 422, 503) in the error envelope",

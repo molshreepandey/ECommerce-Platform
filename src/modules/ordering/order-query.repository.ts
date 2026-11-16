@@ -15,20 +15,38 @@ export const orderSummarySelect = {
 
 export type OrderSummaryRow = Prisma.OrderGetPayload<{ select: typeof orderSummarySelect }>;
 
+// Keyset pages on (placed_at DESC, id DESC): orders(customer_id, placed_at DESC) for a customer,
+// orders(status, placed_at DESC) or orders(placed_at) for staff (plan §9.4). placed_at has microseconds
+// but a JS Date only milliseconds, so the cursor is exact without carrying the time: every row before the
+// cursor's millisecond, plus the rows inside that millisecond that PostgreSQL itself sorts after it.
 export interface OrderPageCursor {
-  placedAt: Date;
-  id: string;
+  placedBefore: Date;
+  sameMillisecondIdsAfter: string[];
 }
 
-// Keyset pages on (placed_at DESC, id DESC): orders(customer_id, placed_at DESC) for a customer,
-// orders(status, placed_at DESC) or orders(placed_at) for staff (plan §9.4).
+export async function findOrderPageCursor(
+  database: DatabaseClient,
+  orderId: string,
+): Promise<OrderPageCursor | null> {
+  const rows = await database.$queryRaw<{ floor: Date; id: string | null }[]>`
+    SELECT date_trunc('milliseconds', c.placed_at) AS floor, o.id::text AS id
+    FROM orders c
+    LEFT JOIN orders o
+      ON o.placed_at >= date_trunc('milliseconds', c.placed_at)
+     AND (o.placed_at, o.id) < (c.placed_at, c.id)
+    WHERE c.id = ${orderId}::uuid`;
+  const [first] = rows;
+  if (first === undefined) return null;
+  return {
+    placedBefore: first.floor,
+    sameMillisecondIdsAfter: rows.flatMap(({ id }) => (id === null ? [] : [id])),
+  };
+}
+
 function afterCursor(cursor: OrderPageCursor | null): Prisma.OrderWhereInput {
   if (cursor === null) return {};
   return {
-    OR: [
-      { placedAt: { lt: cursor.placedAt } },
-      { placedAt: cursor.placedAt, id: { lt: cursor.id } },
-    ],
+    OR: [{ placedAt: { lt: cursor.placedBefore } }, { id: { in: cursor.sameMillisecondIdsAfter } }],
   };
 }
 

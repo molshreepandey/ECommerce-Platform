@@ -94,7 +94,7 @@ test('inventory manager transfers stock between warehouses (D27)', async ({ page
   expect(problems.uncaughtPageErrors).toEqual([]);
 });
 
-test('catalogue manager sees re-categorise, product CSV tools; reports offer CSV exports (D21, D16, D8)', async ({
+test('catalogue manager sees re-categorise, product CSV tools; reports offer the aggregate CSV exports (D21, D16, D8)', async ({
   page,
 }) => {
   const problems = watchPageProblems(page);
@@ -111,11 +111,16 @@ test('catalogue manager sees re-categorise, product CSV tools; reports offer CSV
   await expect(exportLink).toHaveAttribute('download', '');
   await expectNoHorizontalOverflow(page);
   await page.goto(`${adminOrigin}/reports`);
-  for (const name of ['Orders', 'Daily sales', 'GST summary', 'Stock by warehouse']) {
+  for (const name of ['Daily sales', 'GST summary', 'Stock by warehouse']) {
     await expect(
       page.getByRole('link', { name, exact: true }).filter({ visible: true }),
     ).toHaveAttribute('href', /\/api\/admin\/reports\/export\//);
   }
+  // The orders export lists customer names and emails, which this role may not see (SEC-1).
+  const exports = page
+    .locator('section[aria-labelledby="exports-heading"]')
+    .filter({ visible: true });
+  await expect(exports.getByRole('link', { name: 'Orders', exact: true })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   expect(problems.uncaughtPageErrors).toEqual([]);
 });

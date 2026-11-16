@@ -5,6 +5,7 @@ import { getDatabase } from '@/lib/db';
 import { DomainError } from '@/lib/errors';
 import { paiseToRupeesText } from '@/lib/money';
 import { assertStaffPermission, type StaffContext } from '@/modules/identity/access-control';
+import type { PermissionCode } from '@/modules/identity/permissions';
 import { allocateDiscount } from '@/modules/pricing/pricing';
 
 import type { DateRange } from './report.repository';
@@ -18,6 +19,22 @@ import {
 
 export const reportExportSchema = z.enum(['orders', 'sales', 'gst-summary', 'inventory']);
 export type ReportExport = z.infer<typeof reportExportSchema>;
+
+// The orders export lists each customer's name, email, city and pincode, so besides reports.read it needs
+// the permissions that show the same data on the orders and customers pages.
+const extraPermissionsByExport: Readonly<Record<ReportExport, readonly PermissionCode[]>> = {
+  orders: ['orders.read', 'customers.read'],
+  sales: [],
+  'gst-summary': [],
+  inventory: [],
+};
+
+export function canExportReport(staff: StaffContext, report: ReportExport): boolean {
+  return (
+    staff.permissionCodes.has('reports.read') &&
+    extraPermissionsByExport[report].every((code) => staff.permissionCodes.has(code))
+  );
+}
 
 const rupees = (paise: number | bigint) => paiseToRupeesText(Number(paise));
 
@@ -181,13 +198,15 @@ async function inventoryCsv(): Promise<string> {
   );
 }
 
-// D8: orders, daily sales, GST summary and stock by warehouse as CSV (reports.read).
+// D8: orders, daily sales, GST summary and stock by warehouse as CSV (reports.read; orders also needs
+// orders.read and customers.read).
 export async function buildReportExport(
   staff: StaffContext,
   report: ReportExport,
   range: DateRange,
 ): Promise<string> {
   assertStaffPermission(staff, 'reports.read');
+  for (const code of extraPermissionsByExport[report]) assertStaffPermission(staff, code);
   switch (report) {
     case 'orders':
       return ordersCsv(range);

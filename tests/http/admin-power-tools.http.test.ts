@@ -207,6 +207,17 @@ describe('CSV exports over HTTP (D8)', () => {
       ).status,
     ).toBe(404);
   });
+
+  it('refuses the orders export (customer names and emails) to a catalogue manager (SEC-1)', async () => {
+    const orders = await callApi('get', 'admin', '/api/admin/reports/export/orders', {
+      cookie: catalogueManager,
+    });
+    expect(orders.status).toBe(403);
+    const sales = await callApi('get', 'admin', '/api/admin/reports/export/sales', {
+      cookie: catalogueManager,
+    });
+    expect(sales.status).toBe(200);
+  });
 });
 
 describe('product CSV upload and export over HTTP (D16)', () => {

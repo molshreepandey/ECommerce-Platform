@@ -157,6 +157,31 @@ describe('stock is re-checked and never oversold (acceptance test 2)', () => {
   });
 });
 
+describe('order amount range', () => {
+  it('refuses (422) an order whose subtotal is beyond what an order row can hold', async () => {
+    const variant = await stockedVariant([{ priority: 1, onHandQuantity: 5 }]);
+    // ₹1 crore each, the highest price the catalogue accepts; three of them pass the int4 range.
+    await database.productVariant.update({
+      where: { id: variant.variantId },
+      data: { mrpPaise: 1_000_000_000, pricePaise: 1_000_000_000 },
+    });
+    const { customer, addressId } = await createShopper();
+    await addToCustomerCart(customer, { variantId: variant.variantId, quantity: 3 });
+    const error = await expectDomainError(
+      placeOrder(
+        customer,
+        { addressId, paymentMethod: 'ONLINE', expectedTotalPaise: 1_000_000_000 },
+        idempotencyKey(),
+        testMetadata(),
+      ),
+      'ORDER_TOO_LARGE',
+    );
+    expect(error?.httpStatus).toBe(422);
+    expect(await database.order.count()).toBe(0);
+    expect((await stockTotals(variant.variantId)).reserved).toBe(0);
+  });
+});
+
 describe('no duplicate orders (acceptance test 3)', () => {
   it('the same key sent 5 times in parallel creates one order', async () => {
     const variant = await stockedVariant([{ priority: 1, onHandQuantity: 10 }]);

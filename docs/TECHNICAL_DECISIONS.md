@@ -1052,3 +1052,85 @@ content-security-policy.md`) states nonces require dynamic rendering and that Pa
   `deployment_warning` at every start while it is 0. Registration keeps its shared limit (not weakened).
 - **Migrations:** reviewed; no drift; development pre-flight clean;
   `docs/migrations/dev-migration-checklist.md` has the backup, apply, verify and rollback commands.
+
+## TD-034 Independent audit fixes (2026-11-16)
+
+An independent audit (security, money/inventory/order logic, database and API consistency, storefront
+UI, production) found the defects below. Each fix has a regression test, except API-2 (generated document). The BL-1, BL-2, API-1 and UI-1 tests were run against the code before the fix and failed there; the others were written together with their fix. No schema change and no migration.
+
+- **BL-1 (High, fixed):** an order whose shipment had been re-allocated (D34) could never be cancelled:
+  cancellation released the stock of every shipment, including the one the move had already cancelled
+  and released, so `applyReservationChanges` refused with 409 `RESERVATION_EXCEEDED`. That blocked customer
+  and staff cancellation, the unpaid-order expiry (stock stayed reserved) and the third-decline cancel.
+  Cancellation now releases and cancels only live shipments; the moved one keeps its own `cancelled_at`.
+  Test: `post-purchase.test.ts` "cancels a re-allocated order …".
+- **BL-2 (Medium, fixed):** the unpaid-order expiry read "payment pending" without locks, then waited on the
+  order lock held by a succeeding payment, and cancelled the now-paid order (a paid online order stays
+  `PLACED` until staff confirm it). After the order lock it now locks the payment and expires only a
+  `PENDING` one (same lock order as the payment path: order, then payment). Test: `online-payment.test.ts`
+  "the expiry sweep never cancels an order whose payment succeeded while it waited" (holds the order lock,
+  waits for the sweep to block on it, commits a success).
+- **BL-3 (Medium, partly fixed):** a cancelled or fully RTO prepaid order kept its `COLLECTED` payment with
+  no record that money was owed back, although the code comment said it was "marked". It now writes a
+  `payment.refund_due` audit event (amount, payment id, reason `order_cancelled` or `returned_to_origin`) in
+  the same transaction, visible in the admin audit log. Recording the refund itself stays manual (L62); a
+  refund status or table needs a migration and was not added. Test: `online-payment.test.ts` "cancelling a
+  paid order … records the refund owed" (new behaviour, so no before-fix run).
+- **SEC-1 (Medium, fixed):** the orders CSV export lists customer names, emails, cities and pincodes but
+  needed only `reports.read`, which the Catalogue manager role has without `orders.read` or
+  `customers.read`. The orders export now also needs both (403 otherwise; the other three exports are
+  aggregates and unchanged), and the reports page shows only the exports the viewer may download. Tests:
+  `report-exports.test.ts`, `admin-power-tools.http.test.ts`.
+- **SEC-2 (Medium, partly fixed):** OTP verification read the attempt count, compared the code, then
+  counted the wrong attempt, so parallel guesses all read the same count and were all compared. Each
+  attempt is now claimed with one guarded `UPDATE … attempt_count < 5 RETURNING` before the compare, so at
+  most five codes are ever compared per challenge (the last allowed attempt can still succeed). The race
+  itself is timing-dependent, so the tests check the attempt cap under a parallel burst and the fifth-attempt
+  boundary; both also pass on the old code. Not changed: limits stay keyed on IP + phone, which is per phone
+  while the trusted hop count is 0. Once the hop count is set, a per-phone verify limit is also needed
+  (see TD-015).
+- **API-1 (Medium, fixed):** order and customer lists paged with a cursor loaded into a JS `Date`
+  (milliseconds) and compared with `timestamptz(6)` columns, so rows sharing the last row's millisecond
+  could be skipped. The cursor is now exact: everything before the cursor's millisecond, plus the rows
+  inside it that PostgreSQL sorts after the cursor row (computed in SQL). Test:
+  `reports-and-customers.test.ts` (40 customers in one millisecond; the old code returned 25).
+- **API-7 (Low, fixed):** JSON bodies were read whole with `request.json()`. `parseJsonBody` now reads
+  at most 4 MB (`readTextWithin`) and answers 400 `BODY_TOO_LARGE`; 4 MB fits the 1 MB CSV imports once
+  JSON-encoded. Next's proxy already capped buffering at 10 MB. Test: `request-body.test.ts`.
+- **DB-3 (Low, fixed):** order amount columns are `integer`. A line of up to 10 units at the catalogue
+  maximum of ₹1 crore each could pass that range while a coupon kept the total valid, so the insert failed
+  with a 500. Checkout now refuses with 422 `ORDER_TOO_LARGE` first. Test: `checkout.test.ts`.
+- **API-2 (Medium, fixed):** `docs/openapi.json` listed only one success code for idempotent creates
+  (checkout, payment attempts, stock adjustments, receipts, transfers: 201 new, 200 replay) and 200 for
+  adding a cart item (201). The generator now documents both.
+- **UI-1 (Medium, fixed, uncommitted home page):** the home page's department grid had a fixed height for
+  four departments. A fifth root category (an admin adding one) overflowed the section, and its
+  full-cover gradient covered the next section and swallowed its clicks. The rows now have a fixed height
+  and the grid grows. Test: `storefront-catalogue.spec.ts` "a fifth department adds a row …".
+- **TEST-1 (fixed):** the categories E2E test matched department headings by name, but the HTTP suite
+  (run first against the same server) adds its own root category called "Apparel". It now matches the
+  seeded headings by id, visible copy only.
+
+Recorded, not changed:
+
+- **BL-4:** an order with some shipments delivered and others returned stays `PARTIALLY_DELIVERED` (L64).
+  For split COD, the delivered packages' collected shares are not recorded and returns of those units are
+  refused with `PAYMENT_NOT_COLLECTED`. A per-shipment collection record needs a migration.
+- **BL-5:** a customer can cancel while a shipment is `AWB_PENDING` (courier call in flight), which can
+  leave a booking at the courier. The demo courier makes no external call. Refusing cancellation in that
+  state could block an order for good if the call never returns, so this needs a booking-timeout design.
+- **SEC-3:** the Railway deployment runs `APP_ENV=staging`. Unless `OTP_DISPLAY_IN_UI=false` is set there,
+  anyone who knows a registered customer's phone number can sign in as them with the demo OTP popup, and
+  any customer can mark their own online order paid with the simulator. This is acceptable for a demo with
+  dummy accounts, not for real customers (owner decision; not changed here).
+- **SEC-4:** registration and phone changes answer 409 `PHONE_ALREADY_REGISTERED` (phone enumeration), like
+  the accepted email case in TD-012. **SEC-5 / DB-6:** `otp_challenges`, `rate_limit_counters` and
+  `sessions` are never pruned.
+- **DB-1:** refunds, shipment lines and return lines are not tied to the same order by composite foreign
+  keys (the services check it). **DB-2:** cancelling deletes the coupon redemption row. **DB-4:** missing
+  CHECKs (`max_cod_value_paise >= 0`, order-line tax rate range, collection and banner date order, payment
+  `collected_at` matches status, default address not archived). **DB-5:** orders accept idempotency keys of
+  8 characters, the app 16. Each needs a migration, to be prepared only with the owner's approval.
+- **API-3 / API-4:** the admin returns list stops at 100 and courier pincodes at 500, with no paging.
+  **API-5 / API-6:** malformed ids give 404 on store routes and 400 on admin routes, and nine routes return
+  an unwrapped body.

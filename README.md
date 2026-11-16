@@ -59,15 +59,15 @@ More: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/technical-report.md
 
 ## Verification status
 
-| Check                                 | Result (latest local run, commit `d144a2f`)              |
-| ------------------------------------- | -------------------------------------------------------- |
-| Format, lint, typecheck               | pass                                                     |
-| Unit tests (`npm test`)               | 481 / 481                                                |
-| Integration tests (real PostgreSQL)   | 525 / 525                                                |
-| HTTP API tests (against the build)    | 122 / 122                                                |
-| Browser E2E (desktop, 360 px, 768 px) | 150 / 150                                                |
-| Production build                      | pass (111 pages)                                         |
-| GitHub Actions CI                     | passing on `d144a2f` (reported by the owner from GitHub) |
+| Check                                 | Result (latest local run, 2026-11-16: `6873446` + uncommitted audit fixes, TD-034) |
+| ------------------------------------- | ---------------------------------------------------------------------------------- |
+| Format, lint, typecheck               | pass                                                                               |
+| Unit tests (`npm test`)               | 504 / 504                                                                          |
+| Integration tests (real PostgreSQL)   | 568 / 568                                                                          |
+| HTTP API tests (against the build)    | 123 / 123                                                                          |
+| Browser E2E (desktop, 360 px, 768 px) | 159 / 159                                                                          |
+| Production build                      | pass                                                                               |
+| GitHub Actions CI                     | passing on `d144a2f` (reported by the owner; later commits not readable here)      |
 
 All five acceptance tests of the brief are automated; details and the fresh-database CI rehearsal are in
 [`docs/test-evidence.md`](docs/test-evidence.md).

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getDatabase } from '@/lib/db';
 import { DomainError } from '@/lib/errors';
 import { expireUnpaidOnlineOrders, submitOnlinePayment } from '@/modules/payment/payment.service';
-import { confirmOrder } from '@/modules/ordering/order-lifecycle.service';
+import { cancelOrderByCustomer, confirmOrder } from '@/modules/ordering/order-lifecycle.service';
 
 import {
   checkoutWith,
@@ -16,6 +16,7 @@ import {
   stockTotals,
 } from './support/commerce-fixtures';
 import { testMetadata } from './support/identity-fixtures';
+import { backendProcessId, waitUntilSomeoneWaitsOn } from './support/lock-probes';
 import { truncateAllTestTables } from './support/test-database';
 
 const database = getDatabase();
@@ -250,6 +251,55 @@ describe('simulated online payment', () => {
       expect((await orderWithRelations(orderId)).payment?.status).toBe('FAILED');
     }
   });
+  it('cancelling a paid order keeps the payment collected and records the refund owed (BL-3, L62)', async () => {
+    const { customer, orderId, amountPaise, variant } = await onlineOrder();
+    await submitOnlinePayment(
+      customer,
+      orderId,
+      { scenario: 'SUCCESS', amountPaise },
+      idempotencyKey(),
+      testMetadata(),
+    );
+    await cancelOrderByCustomer(customer, orderId, 'Ordered by mistake', testMetadata());
+    const after = await orderWithRelations(orderId);
+    expect(after.status).toBe('CANCELLED');
+    expect(after.payment?.status).toBe('COLLECTED');
+    expect((await stockTotals(variant.variantId)).reserved).toBe(0);
+    const marker = await database.auditLog.findFirstOrThrow({
+      where: { action: 'payment.refund_due', entityId: orderId },
+      select: { entityType: true, after: true },
+    });
+    expect(marker.entityType).toBe('order');
+    expect(marker.after).toMatchObject({ amountPaise, reason: 'order_cancelled' });
+  });
+
+  it('the expiry sweep never cancels an order whose payment succeeded while it waited (BL-2)', async () => {
+    const { orderId } = await onlineOrder();
+    await database.order.update({
+      where: { id: orderId },
+      data: { placedAt: new Date(Date.now() - 45 * 60_000) },
+    });
+    // A payment success holds the order lock while the sweep reads the order as unpaid, then commits.
+    const sweep: { result?: Promise<number> } = {};
+    await database.$transaction(
+      async (transaction) => {
+        await transaction.$queryRaw`SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
+        const holder = await backendProcessId(transaction);
+        sweep.result = expireUnpaidOnlineOrders({ requestId: 'test' });
+        await waitUntilSomeoneWaitsOn(holder);
+        await transaction.payment.update({
+          where: { orderId },
+          data: { status: 'COLLECTED', collectedAt: new Date() },
+        });
+      },
+      { timeout: 20_000 },
+    );
+    expect(await sweep.result).toBe(0);
+    const after = await orderWithRelations(orderId);
+    expect(after.status).toBe('PLACED');
+    expect(after.payment?.status).toBe('COLLECTED');
+  });
+
   it('caps a customer at 2 unpaid online orders; paying, expiry or COD frees the way (M4)', async () => {
     const variant = await stockedVariant([{ priority: 1, onHandQuantity: 10 }]);
     const { customer, addressId } = await createShopper();
